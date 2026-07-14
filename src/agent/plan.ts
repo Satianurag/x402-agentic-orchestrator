@@ -97,7 +97,7 @@ async function estimateStep(
       return {
         service,
         endpoint: "POST /synthesize (Arbitrum settlement)",
-        estCostUsdc: synthesizeEstimateCost(),
+        estCostUsdc: await synthesizeEstimateCost(),
       };
   }
 }

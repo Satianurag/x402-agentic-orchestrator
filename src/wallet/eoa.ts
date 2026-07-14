@@ -1,6 +1,7 @@
 import { createPublicClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { USDC_ADDRESSES, getBaseRpcUrl, getPaymentChain } from "../config/chains.js";
+import { getBaseRpcUrl, getPaymentChain, getPaymentUsdc } from "../config/chains.js";
+import { getRunContext } from "./run-context.js";
 
 const ERC20_BALANCE_ABI = [
   {
@@ -12,19 +13,27 @@ const ERC20_BALANCE_ABI = [
   },
 ] as const;
 
+export function getRunEoaAccountFromKey(privateKey: Hex) {
+  return privateKeyToAccount(privateKey);
+}
+
 function requirePrivateKey(): Hex {
   const key = process.env.PRIVATE_KEY;
-  if (!key) throw new Error("PRIVATE_KEY required");
+  if (!key) throw new Error("PRIVATE_KEY required for CLI runs");
   return key as Hex;
 }
 
-/** Run-wallet EOA — same address that signs x402 payments on Base. */
+/** Active run-wallet EOA — from run context (CLI private key or Magic address). */
 export function getRunEoaAddress(): `0x${string}` {
-  return privateKeyToAccount(requirePrivateKey()).address;
+  return getRunContext().eoaAddress;
 }
 
 export function getRunEoaAccount() {
-  return privateKeyToAccount(requirePrivateKey());
+  const ctx = getRunContext();
+  if (ctx.signer.mode !== "cli") {
+    throw new Error("getRunEoaAccount() is CLI-only — UI runs use Magic delegated signing");
+  }
+  return getRunEoaAccountFromKey(requirePrivateKey());
 }
 
 export async function getEoaBaseUsdcBalance(): Promise<bigint> {
@@ -33,7 +42,7 @@ export async function getEoaBaseUsdcBalance(): Promise<bigint> {
     transport: http(getBaseRpcUrl()),
   });
   return client.readContract({
-    address: USDC_ADDRESSES.base,
+    address: getPaymentUsdc(),
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
     args: [getRunEoaAddress()],

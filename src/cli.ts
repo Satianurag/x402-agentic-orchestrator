@@ -5,7 +5,7 @@ import { runAgent } from "./agent/run.js";
 function parseArgs(argv: string[]) {
   let goal = "";
   let budget = 0.5;
-  let network = process.env.NETWORK ?? "mainnet";
+  let network = process.env.NETWORK ?? "sepolia";
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -22,7 +22,7 @@ function parseArgs(argv: string[]) {
 async function main() {
   const { goal, budget, network } = parseArgs(process.argv.slice(2));
   if (!goal) {
-    console.error("Usage: tsx src/cli.ts --goal \"...\" --budget 0.50 --network mainnet");
+    console.error('Usage: tsx src/cli.ts --goal "..." --budget 0.50 --network sepolia');
     process.exit(1);
   }
 
@@ -62,6 +62,7 @@ async function main() {
   console.log("\n--- SPEND REPORT ---");
   for (const line of result.spend) {
     console.log(`  ${line.service.padEnd(12)} $${line.usdc.toFixed(6)}  ${line.txHash}`);
+    if (line.explorerUrl) console.log(`               ${line.explorerUrl}`);
   }
   console.log(`  TOTAL: $${result.totalUsdc.toFixed(6)} USDC`);
   if (result.uaTopUpTxId) console.log(`  UA top-up: ${result.uaTopUpTxId}`);

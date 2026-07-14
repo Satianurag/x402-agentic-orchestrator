@@ -1,13 +1,17 @@
 import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
+import { requireServiceBaseUrl } from "../config/chains.js";
 
-const BASE = "https://x402.tavily.com";
+function tavilyBase(): string {
+  return requireServiceBaseUrl("TAVILY_BASE_URL");
+}
 
 export async function tavilySearch(
   query: string,
   budgetGuard: import("../budget/guard.js").BudgetGuard,
 ) {
+  const base = tavilyBase();
   return paidRequest(
-    `${BASE}/search`,
+    `${base}/search`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -19,9 +23,15 @@ export async function tavilySearch(
 }
 
 export async function tavilyEstimateCost(query: string): Promise<number> {
-  return probeQuoteUsdc(`${BASE}/search`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
+  const base = tavilyBase();
+  const endpoint = `${base}/search`;
+  return probeQuoteUsdc(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query }),
+    },
+    `tavily ${endpoint}`,
+  );
 }

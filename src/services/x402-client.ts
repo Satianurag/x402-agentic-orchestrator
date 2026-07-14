@@ -1,18 +1,24 @@
+import { createPublicClient, http } from "viem";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
+import { toClientEvmSigner } from "@x402/evm";
 import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
 } from "@x402/core/http";
 import {
-  CAIP2,
   atomicToUsdc,
+  getBaseRpcUrl,
   getExplorerTxUrl,
   getPaymentCaip2,
+  getPaymentChain,
   getSellerCaip2,
+  getSellerRpcUrl,
 } from "../config/chains.js";
+import { getRunContext } from "../wallet/run-context.js";
 import { getRunEoaAccount } from "../wallet/eoa.js";
+import { requestDelegatedSignTypedData } from "../wallet/sign-bridge.js";
 import type { BudgetGuard } from "../budget/guard.js";
 
 export interface PaymentResult {
@@ -27,12 +33,39 @@ function paymentHeader(res: Response, name: string): string | null {
   return res.headers.get(name) ?? res.headers.get(name.toUpperCase());
 }
 
+function createPaymentSigner() {
+  const { signer } = getRunContext();
+  if (signer.mode === "cli") {
+    const account = getRunEoaAccount();
+    const publicClient = createPublicClient({
+      chain: getPaymentChain(),
+      transport: http(getBaseRpcUrl()),
+    });
+    return toClientEvmSigner(account, publicClient);
+  }
+
+  return {
+    address: signer.address,
+    signTypedData: requestDelegatedSignTypedData,
+  };
+}
+
 export function createX402Fetch(budgetGuard?: BudgetGuard) {
-  const account = getRunEoaAccount();
+  const paymentCaip2 = getPaymentCaip2();
+  const sellerCaip2 = getSellerCaip2();
+  const evmSigner = createPaymentSigner();
 
   const client = new x402Client();
-  registerExactEvmScheme(client, { signer: account, networks: [getPaymentCaip2(), CAIP2.base] });
-  registerExactEvmScheme(client, { signer: account, networks: [getSellerCaip2(), CAIP2.arbitrum] });
+  registerExactEvmScheme(client, {
+    signer: evmSigner,
+    networks: [paymentCaip2],
+    schemeOptions: { rpcUrl: getBaseRpcUrl() },
+  });
+  registerExactEvmScheme(client, {
+    signer: evmSigner,
+    networks: [sellerCaip2],
+    schemeOptions: { rpcUrl: getSellerRpcUrl() },
+  });
 
   if (budgetGuard) {
     client.onBeforePaymentCreation(async (ctx) => {
@@ -107,21 +140,21 @@ export async function paidRequest(
 }
 
 /** Probe live 402 quote — throws if no payment requirements returned. */
-export async function probeQuoteUsdc(url: string, init: RequestInit): Promise<number> {
+export async function probeQuoteUsdc(url: string, init: RequestInit, endpointLabel: string): Promise<number> {
   const res = await fetch(url, init);
   if (res.status !== 402) {
-    throw new Error(`Expected HTTP 402 from ${url}, got ${res.status}`);
+    throw new Error(`Expected HTTP 402 from ${endpointLabel}, got ${res.status}`);
   }
 
   const header = paymentHeader(res, "payment-required");
   if (!header) {
-    throw new Error(`402 response from ${url} missing PAYMENT-REQUIRED header`);
+    throw new Error(`402 response from ${endpointLabel} missing PAYMENT-REQUIRED header`);
   }
 
   const required = decodePaymentRequiredHeader(header);
   const amount = required.accepts[0]?.amount;
   if (!amount) {
-    throw new Error(`402 response from ${url} has no price in accepts[0].amount`);
+    throw new Error(`402 response from ${endpointLabel} has no price in accepts[0].amount`);
   }
 
   return atomicToUsdc(amount);

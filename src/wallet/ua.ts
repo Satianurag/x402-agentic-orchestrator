@@ -1,5 +1,4 @@
 import {
-  CHAIN_ID,
   SUPPORTED_TOKEN_TYPE,
   UniversalAccount,
   type EIP7702Authorization,
@@ -9,42 +8,18 @@ import {
 } from "@particle-network/universal-account-sdk";
 import { Magic } from "@magic-sdk/admin";
 import { type Hex } from "viem";
-import { Signature } from "ethers";
-import { USDC_ADDRESSES } from "../config/chains.js";
-import { getRunEoaAddress, getRunEoaAccount } from "./eoa.js";
-import { getSellerRpcUrl } from "../config/chains.js";
-
-export interface RunSigner {
-  address: `0x${string}`;
-  signMessage: (message: Hex) => Promise<`0x${string}`>;
-  signAuthorization: (auth: {
-    address: `0x${string}`;
-    chainId: number;
-    nonce: number;
-  }) => Promise<string>;
-}
+import {
+  getPaymentUsdc,
+  getSellerRpcUrl,
+  getUaTopUpChainId,
+} from "../config/chains.js";
+import { getRunContext } from "./run-context.js";
+import type { RunSigner } from "./signer.js";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing required env: ${name}`);
   return v;
-}
-
-export function createPrivateKeySigner(): RunSigner {
-  const account = getRunEoaAccount();
-  return {
-    address: account.address,
-    signMessage: (message) => account.signMessage({ message: { raw: message } }),
-    signAuthorization: async (auth) => {
-      const signed = await account.signAuthorization({
-        address: auth.address,
-        chainId: auth.chainId,
-        nonce: auth.nonce,
-      });
-      const yParity = (signed.yParity ?? Number(signed.v ?? 0)) as 0 | 1;
-      return Signature.from({ r: signed.r, s: signed.s, yParity }).serialized;
-    },
-  };
 }
 
 let magicAdmin: Magic | null = null;
@@ -92,7 +67,7 @@ export class UniversalAccountWallet {
   async getUnifiedUsdcBalance(): Promise<number> {
     const assets = await this.ua.getPrimaryAssets();
     let total = 0;
-    for (const asset of assets.assets ?? []) {
+    for (const asset of assets.assets) {
       if (asset.tokenType === SUPPORTED_TOKEN_TYPE.USDC) total += asset.amountInUSD;
     }
     return total;
@@ -102,7 +77,7 @@ export class UniversalAccountWallet {
     const authorizations: EIP7702Authorization[] = [];
     const nonceMap = new Map<number, string>();
 
-    for (const chainOp of tx.userOps ?? []) {
+    for (const chainOp of tx.userOps) {
       const auth = this.resolve7702Auth(chainOp);
       if (!auth || this.is7702Delegated(chainOp)) continue;
 
@@ -140,13 +115,13 @@ export class UniversalAccountWallet {
     return result;
   }
 
-  /** Cross-chain UA transfer: unified balance → EOA on Base (7702 + value move). */
+  /** Cross-chain UA transfer: unified balance → run EOA on Base (7702 + value move). */
   async crossChainTopUpEoa(amountUsdc: string): Promise<{ transactionId: string }> {
-    const receiver = getRunEoaAddress();
+    const receiver = this.signer.address;
     const tx = await this.ua.createTransferTransaction({
       token: {
-        chainId: CHAIN_ID.BASE_MAINNET,
-        address: USDC_ADDRESSES.base,
+        chainId: getUaTopUpChainId(),
+        address: getPaymentUsdc(),
       },
       amount: amountUsdc,
       receiver,
@@ -155,15 +130,7 @@ export class UniversalAccountWallet {
   }
 }
 
-let walletInstance: UniversalAccountWallet | null = null;
-
 export function getUniversalAccountWallet(): UniversalAccountWallet {
-  if (!walletInstance) {
-    walletInstance = new UniversalAccountWallet(createPrivateKeySigner());
-  }
-  return walletInstance;
-}
-
-export function resetUniversalAccountWallet(): void {
-  walletInstance = null;
+  const { signer } = getRunContext();
+  return new UniversalAccountWallet(signer);
 }

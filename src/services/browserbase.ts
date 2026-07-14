@@ -1,12 +1,16 @@
 import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
+import { requireServiceBaseUrl } from "../config/chains.js";
 
-const BASE = "https://x402.browserbase.com";
+function browserbaseBase(): string {
+  return requireServiceBaseUrl("BROWSERBASE_BASE_URL");
+}
 
 export async function browserbaseCreateSession(
   budgetGuard: import("../budget/guard.js").BudgetGuard,
 ) {
+  const base = browserbaseBase();
   return paidRequest(
-    `${BASE}/browser/session/create`,
+    `${base}/browser/session/create`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -18,9 +22,15 @@ export async function browserbaseCreateSession(
 }
 
 export async function browserbaseEstimateCost(): Promise<number> {
-  return probeQuoteUsdc(`${BASE}/browser/session/create`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({}),
-  });
+  const base = browserbaseBase();
+  const endpoint = `${base}/browser/session/create`;
+  return probeQuoteUsdc(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    },
+    `browserbase ${endpoint}`,
+  );
 }

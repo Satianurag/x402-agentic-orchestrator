@@ -1,5 +1,4 @@
 import { fundRunWallet, type BudgetGuard } from "../budget/guard.js";
-import { assertExternalServicesAvailable } from "../config/chains.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
 import { tavilySearch } from "../services/tavily.js";
 import { coingeckoPrice } from "../services/coingecko.js";
@@ -8,6 +7,9 @@ import { browserbaseCreateSession } from "../services/browserbase.js";
 import { exaSearch } from "../services/exa.js";
 import { synthesizeDeliverable } from "../services/seller.js";
 import { resolveRunSession } from "../wallet/session.js";
+import { runWithContext } from "../wallet/run-context.js";
+import { setSignRequestEmitter } from "../wallet/sign-bridge.js";
+import type { SignRequest } from "../wallet/sign-bridge.js";
 import type { PaymentResult } from "../services/x402-client.js";
 
 export interface SpendLine {
@@ -15,6 +17,7 @@ export interface SpendLine {
   usdc: number;
   txHash: string;
   explorerUrl: string;
+  network: string;
 }
 
 export interface RunResult {
@@ -31,6 +34,7 @@ export type RunEvent =
   | { type: "step_start"; step: PlanStep; index: number }
   | { type: "payment"; line: SpendLine; remaining: number }
   | { type: "step_done"; step: PlanStep; index: number }
+  | { type: "sign_request"; request: SignRequest }
   | { type: "error"; message: string }
   | { type: "done"; result: RunResult };
 
@@ -74,17 +78,10 @@ async function executeStep(
   }
 }
 
-export async function runAgent(options: RunOptions): Promise<RunResult> {
-  const { goal, budgetUsdc, didToken, requireMagic = false, onEvent, signal } = options;
+async function runAgentInner(options: RunOptions): Promise<RunResult> {
+  const { goal, budgetUsdc, onEvent, signal } = options;
   abortController = new AbortController();
   const mergedSignal = signal ?? abortController.signal;
-
-  if (requireMagic && !didToken) {
-    throw new Error("Magic login required — provide didToken from the UI");
-  }
-
-  await resolveRunSession(didToken);
-  assertExternalServicesAvailable();
 
   const plan = await createPlan(goal);
   onEvent?.({ type: "plan", plan });
@@ -119,6 +116,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       usdc: result.usdc,
       txHash: result.txHash,
       explorerUrl: result.explorerUrl,
+      network: result.network,
     };
     spend.push(line);
     onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
@@ -143,4 +141,22 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   };
   onEvent?.({ type: "done", result: runResult });
   return runResult;
+}
+
+export async function runAgent(options: RunOptions): Promise<RunResult> {
+  const { didToken, requireMagic = false, onEvent } = options;
+  const session = await resolveRunSession(didToken, requireMagic);
+
+  if (session.signer.mode === "ui") {
+    setSignRequestEmitter((req) => onEvent?.({ type: "sign_request", request: req }));
+  }
+
+  try {
+    return await runWithContext(
+      { eoaAddress: session.eoaAddress, signer: session.signer, magicVerified: session.magicVerified },
+      () => runAgentInner(options),
+    );
+  } finally {
+    setSignRequestEmitter(null);
+  }
 }

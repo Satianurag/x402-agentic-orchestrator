@@ -1,13 +1,17 @@
 import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
+import { requireServiceBaseUrl } from "../config/chains.js";
 
-const BASE = "https://api.exa.ai";
+function exaBase(): string {
+  return requireServiceBaseUrl("EXA_BASE_URL");
+}
 
 export async function exaSearch(
   query: string,
   budgetGuard: import("../budget/guard.js").BudgetGuard,
 ) {
+  const base = exaBase();
   return paidRequest(
-    `${BASE}/search`,
+    `${base}/search`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -19,9 +23,15 @@ export async function exaSearch(
 }
 
 export async function exaEstimateCost(query: string): Promise<number> {
-  return probeQuoteUsdc(`${BASE}/search`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
+  const base = exaBase();
+  const endpoint = `${base}/search`;
+  return probeQuoteUsdc(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query }),
+    },
+    `exa ${endpoint}`,
+  );
 }
