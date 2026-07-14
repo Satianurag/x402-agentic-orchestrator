@@ -1,0 +1,75 @@
+#!/usr/bin/env node
+import "dotenv/config";
+import { runAgent } from "./agent/run.js";
+import { getNetworkMode } from "./config/chains.js";
+
+function parseArgs(argv: string[]) {
+  let goal = "";
+  let budget = 0.5;
+  let network = getNetworkMode();
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--goal" && argv[i + 1]) {
+      goal = argv[++i];
+    } else if (arg === "--budget" && argv[i + 1]) {
+      budget = parseFloat(argv[++i]);
+    } else if (arg === "--network" && argv[i + 1]) {
+      network = argv[++i] === "mainnet" ? "mainnet" : "sepolia";
+      process.env.NETWORK = network;
+    }
+  }
+  return { goal, budget, network };
+}
+
+async function main() {
+  const { goal, budget, network } = parseArgs(process.argv.slice(2));
+
+  if (!goal) {
+    console.error("Usage: tsx src/cli.ts --goal \"...\" --budget 0.50 --network sepolia");
+    process.exit(1);
+  }
+
+  console.log(`[cli] network=${network} budget=${budget} USDC`);
+  console.log(`[cli] goal: ${goal}`);
+
+  const result = await runAgent({
+    goal,
+    budgetUsdc: budget,
+    onEvent: (event) => {
+      switch (event.type) {
+        case "plan":
+          console.log("\n--- PLAN ---");
+          for (const step of event.plan.steps) {
+            console.log(`  ${step.service}: ${step.endpoint} (~$${step.estCostUsdc.toFixed(4)})`);
+          }
+          console.log(`  Total est: $${event.plan.totalEstUsdc.toFixed(4)}\n`);
+          break;
+        case "payment":
+          console.log(
+            `[paid] ${event.line.service} $${event.line.usdc.toFixed(6)} tx=${event.line.txHash} remaining=$${event.remaining.toFixed(6)}`,
+          );
+          if (event.line.explorerUrl) console.log(`       ${event.line.explorerUrl}`);
+          break;
+        case "error":
+          console.error(`[error] ${event.message}`);
+          break;
+      }
+    },
+  });
+
+  console.log("\n--- DELIVERABLE ---\n");
+  console.log(result.deliverable);
+  console.log("\n--- SPEND REPORT ---");
+  for (const line of result.spend) {
+    console.log(
+      `  ${line.service.padEnd(12)} $${line.usdc.toFixed(6)}  ${line.txHash || "(no tx)"}`,
+    );
+  }
+  console.log(`  TOTAL: $${result.totalUsdc.toFixed(6)} USDC`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
