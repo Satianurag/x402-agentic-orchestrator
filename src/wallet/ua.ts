@@ -10,7 +10,6 @@ import { Magic } from "@magic-sdk/admin";
 import { type Hex } from "viem";
 import {
   getPaymentUsdc,
-  getSellerRpcUrl,
   getUaTopUpChainId,
 } from "../config/chains.js";
 import { getRunContext } from "./run-context.js";
@@ -45,6 +44,7 @@ export class UniversalAccountWallet {
 
   constructor(signer: RunSigner) {
     this.signer = signer;
+    const rpcUrl = process.env.UNIVERSALX_RPC_URL;
     this.ua = new UniversalAccount({
       projectId: requireEnv("PARTICLE_PROJECT_ID"),
       projectClientKey: requireEnv("PARTICLE_CLIENT_KEY"),
@@ -55,7 +55,7 @@ export class UniversalAccountWallet {
         ownerAddress: signer.address,
         useEIP7702: true,
       },
-      rpcUrl: getSellerRpcUrl(),
+      ...(rpcUrl ? { rpcUrl } : {}),
     });
   }
 

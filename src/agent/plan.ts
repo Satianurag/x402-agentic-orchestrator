@@ -69,9 +69,9 @@ async function estimateStep(
     case "coingecko":
       return {
         service,
-        endpoint: "GET https://api.coingecko.com/x402/simple/price",
+        endpoint: "GET https://pro-api.coingecko.com/api/v3/x402/simple/price",
         estCostUsdc: await coingeckoEstimateCost(),
-        params: { ids: ["bitcoin", "ethereum", "solana"], vs: ["usd"] },
+        params: { symbols: ["btc", "eth", "sol"], vs: ["usd"] },
       };
     case "firecrawl":
       return {

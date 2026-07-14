@@ -63,9 +63,9 @@ async function executeStep(
     case "tavily":
       return tavilySearch((step.params?.query as string) ?? goal, guard);
     case "coingecko": {
-      const ids = (step.params?.ids as string[]) ?? ["bitcoin", "ethereum"];
+      const symbols = (step.params?.symbols as string[]) ?? ["btc", "eth"];
       const vs = (step.params?.vs as string[]) ?? ["usd"];
-      return coingeckoPrice(ids, vs, guard);
+      return coingeckoPrice(symbols, vs, guard);
     }
     case "firecrawl":
       return firecrawlSearch((step.params?.query as string) ?? goal, guard);
