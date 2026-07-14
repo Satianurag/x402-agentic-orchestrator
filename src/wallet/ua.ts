@@ -1,18 +1,23 @@
 import {
+  CHAIN_ID,
+  SUPPORTED_TOKEN_TYPE,
   UniversalAccount,
   type EIP7702Authorization,
   type ITransaction,
+  type IUserOpEVM,
+  type IUserOpWithChain,
 } from "@particle-network/universal-account-sdk";
 import { Magic } from "@magic-sdk/admin";
-import { createPublicClient, http, type Hex } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { type Hex } from "viem";
 import { Signature } from "ethers";
-import { getArbitrumChain, getArbitrumRpcUrl, getArbitrumUsdc, getNetworkMode } from "../config/chains.js";
+import { USDC_ADDRESSES } from "../config/chains.js";
+import { getRunEoaAddress, getRunEoaAccount } from "./eoa.js";
+import { getSellerRpcUrl } from "../config/chains.js";
 
 export interface RunSigner {
   address: `0x${string}`;
   signMessage: (message: Hex) => Promise<`0x${string}`>;
-  signAuthorization?: (auth: {
+  signAuthorization: (auth: {
     address: `0x${string}`;
     chainId: number;
     nonce: number;
@@ -25,10 +30,8 @@ function requireEnv(name: string): string {
   return v;
 }
 
-/** Dev/CLI signer from PRIVATE_KEY (same EOA Magic would provision in production). */
 export function createPrivateKeySigner(): RunSigner {
-  const key = requireEnv("PRIVATE_KEY") as Hex;
-  const account = privateKeyToAccount(key);
+  const account = getRunEoaAccount();
   return {
     address: account.address,
     signMessage: (message) => account.signMessage({ message: { raw: message } }),
@@ -46,18 +49,15 @@ export function createPrivateKeySigner(): RunSigner {
 
 let magicAdmin: Magic | null = null;
 
-export function getMagicAdmin(): Magic | null {
-  const secret = process.env.MAGIC_SECRET_KEY;
-  if (!secret) return null;
+export async function getMagicAdmin(): Promise<Magic> {
   if (!magicAdmin) {
-    magicAdmin = new Magic(secret);
+    magicAdmin = await Magic.init(requireEnv("MAGIC_SECRET_KEY"));
   }
   return magicAdmin;
 }
 
 export async function verifyMagicDidToken(didToken: string): Promise<string> {
-  const admin = getMagicAdmin();
-  if (!admin) throw new Error("MAGIC_SECRET_KEY not configured");
+  const admin = await getMagicAdmin();
   admin.token.validate(didToken);
   const meta = await admin.users.getMetadataByToken(didToken);
   if (!meta.publicAddress) throw new Error("Magic user has no public address");
@@ -70,7 +70,6 @@ export class UniversalAccountWallet {
 
   constructor(signer: RunSigner) {
     this.signer = signer;
-
     this.ua = new UniversalAccount({
       projectId: requireEnv("PARTICLE_PROJECT_ID"),
       projectClientKey: requireEnv("PARTICLE_CLIENT_KEY"),
@@ -81,7 +80,7 @@ export class UniversalAccountWallet {
         ownerAddress: signer.address,
         useEIP7702: true,
       },
-      rpcUrl: getArbitrumRpcUrl(),
+      rpcUrl: getSellerRpcUrl(),
     });
   }
 
@@ -94,9 +93,7 @@ export class UniversalAccountWallet {
     const assets = await this.ua.getPrimaryAssets();
     let total = 0;
     for (const asset of assets.assets ?? []) {
-      if (asset.tokenType === "usdc") {
-        total += asset.amountInUSD;
-      }
+      if (asset.tokenType === SUPPORTED_TOKEN_TYPE.USDC) total += asset.amountInUSD;
     }
     return total;
   }
@@ -105,67 +102,56 @@ export class UniversalAccountWallet {
     const authorizations: EIP7702Authorization[] = [];
     const nonceMap = new Map<number, string>();
 
-    for (const userOp of tx.userOps ?? []) {
-      if (userOp.eip7702Auth && !userOp.eip7702Delegated && this.signer.signAuthorization) {
-        let signature = nonceMap.get(userOp.eip7702Auth.nonce);
-        if (!signature) {
-          signature = await this.signer.signAuthorization({
-            address: userOp.eip7702Auth.address as `0x${string}`,
-            chainId: userOp.eip7702Auth.chainId,
-            nonce: userOp.eip7702Auth.nonce,
-          });
-          nonceMap.set(userOp.eip7702Auth.nonce, signature);
-        }
-        authorizations.push({ userOpHash: userOp.userOpHash, signature });
+    for (const chainOp of tx.userOps ?? []) {
+      const auth = this.resolve7702Auth(chainOp);
+      if (!auth || this.is7702Delegated(chainOp)) continue;
+
+      let signature = nonceMap.get(auth.nonce);
+      if (!signature) {
+        signature = await this.signer.signAuthorization({
+          address: auth.address as `0x${string}`,
+          chainId: auth.chainId,
+          nonce: auth.nonce,
+        });
+        nonceMap.set(auth.nonce, signature);
       }
+      authorizations.push({ userOpHash: chainOp.userOpHash, signature });
     }
     return authorizations;
+  }
+
+  private resolve7702Auth(chainOp: IUserOpWithChain) {
+    if (chainOp.eip7702Auth) return chainOp.eip7702Auth;
+    const evm = chainOp.userOp as IUserOpEVM;
+    return evm.eip7702Auth;
+  }
+
+  private is7702Delegated(chainOp: IUserOpWithChain): boolean {
+    const evm = chainOp.userOp as IUserOpEVM;
+    return Boolean(evm.eip7702Delegated);
   }
 
   async sendUaTransaction(tx: ITransaction): Promise<{ transactionId: string }> {
     const rootHash = tx.rootHash as Hex;
     const signature = await this.signer.signMessage(rootHash);
     const authorizations = await this.collect7702Authorizations(tx);
-    return this.ua.sendTransaction(tx, signature, authorizations);
+    const result = await this.ua.sendTransaction(tx, signature, authorizations);
+    console.log(`[ua] 7702 transaction broadcast id=${result.transactionId}`);
+    return result;
   }
 
-  async transferUsdc(amountUsdc: string, receiver: `0x${string}`): Promise<{ transactionId: string }> {
-    const mode = getNetworkMode();
-    const chainId = mode === "mainnet" ? 42161 : 421614;
-
+  /** Cross-chain UA transfer: unified balance → EOA on Base (7702 + value move). */
+  async crossChainTopUpEoa(amountUsdc: string): Promise<{ transactionId: string }> {
+    const receiver = getRunEoaAddress();
     const tx = await this.ua.createTransferTransaction({
       token: {
-        chainId,
-        address: getArbitrumUsdc(mode),
+        chainId: CHAIN_ID.BASE_MAINNET,
+        address: USDC_ADDRESSES.base,
       },
       amount: amountUsdc,
       receiver,
     });
     return this.sendUaTransaction(tx);
-  }
-
-  /** On-chain USDC balance for the UA address on Arbitrum (hard cap enforcement). */
-  async getOnChainUsdcBalance(): Promise<bigint> {
-    const address = await this.getAddress();
-    const client = createPublicClient({
-      chain: getArbitrumChain(),
-      transport: http(getArbitrumRpcUrl()),
-    });
-    const balance = await client.readContract({
-      address: getArbitrumUsdc() as `0x${string}`,
-      abi: [
-        {
-          name: "balanceOf",
-          type: "function",
-          stateMutability: "view",
-          inputs: [{ name: "account", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-        },
-      ] as const,
-      functionName: "balanceOf",
-      args: [address],
-    });
-    return balance;
   }
 }
 
@@ -176,4 +162,8 @@ export function getUniversalAccountWallet(): UniversalAccountWallet {
     walletInstance = new UniversalAccountWallet(createPrivateKeySigner());
   }
   return walletInstance;
+}
+
+export function resetUniversalAccountWallet(): void {
+  walletInstance = null;
 }

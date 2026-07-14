@@ -1,5 +1,8 @@
 import { paidRequest } from "./x402-client.js";
 
+/** Must match paymentMiddleware price in server/seller.ts */
+export const SELLER_PRICE_USDC = 0.002;
+
 export async function synthesizeDeliverable(
   goal: string,
   context: unknown[],
@@ -18,4 +21,6 @@ export async function synthesizeDeliverable(
   );
 }
 
-export const SYNTHESIZE_EST_COST_USDC = 0.002;
+export function synthesizeEstimateCost(): number {
+  return SELLER_PRICE_USDC;
+}

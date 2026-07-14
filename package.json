@@ -14,21 +14,25 @@
     "dev": "tsx watch src/server/seller.ts"
   },
   "dependencies": {
-    "@coinbase/x402": "^2.1.0",
-    "@magic-sdk/admin": "^2.8.2",
-    "@particle-network/universal-account-sdk": "^2.0.3",
-    "@x402/core": "^2.18.0",
-    "@x402/evm": "^2.18.0",
-    "@x402/express": "^2.18.0",
-    "@x402/fetch": "^2.18.0",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "viem": "^2.23.5"
+    "@coinbase/x402": "2.1.0",
+    "@magic-sdk/admin": "2.8.2",
+    "@particle-network/universal-account-sdk": "2.0.3",
+    "@x402/core": "2.18.0",
+    "@x402/evm": "2.18.0",
+    "@x402/express": "2.18.0",
+    "@x402/fetch": "2.18.0",
+    "dotenv": "17.4.2",
+    "ethers": "6.17.0",
+    "express": "4.22.2",
+    "viem": "2.55.2"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.13.4",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3"
+    "@types/express": "4.17.25",
+    "@types/node": "22.20.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }

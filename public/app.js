@@ -1,9 +1,17 @@
+import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
+
 const views = {
+  login: document.getElementById("view-login"),
   home: document.getElementById("view-home"),
   running: document.getElementById("view-running"),
   result: document.getElementById("view-result"),
 };
 
+const emailInput = document.getElementById("email");
+const loginBtn = document.getElementById("login-btn");
+const loginStatus = document.getElementById("login-status");
+const logoutBtn = document.getElementById("logout-btn");
+const walletLabel = document.getElementById("wallet-label");
 const agentList = document.getElementById("agent-list");
 const goalInput = document.getElementById("goal");
 const budgetInput = document.getElementById("budget");
@@ -17,8 +25,9 @@ const deliverableEl = document.getElementById("deliverable");
 const spendBody = document.querySelector("#spend-table tbody");
 const totalSpent = document.getElementById("total-spent");
 
-let selectedAgentId = null;
-let eventSource = null;
+let magic = null;
+let didToken = null;
+let walletAddress = null;
 
 function showView(name) {
   for (const [key, el] of Object.entries(views)) {
@@ -38,6 +47,59 @@ function updateBudgetBar(spent, cap) {
   budgetLabel.textContent = `$${spent.toFixed(4)} / $${cap.toFixed(4)} USDC`;
 }
 
+async function initMagic() {
+  const res = await fetch("/api/config");
+  const cfg = await res.json();
+  magic = new Magic(cfg.magicPublishableKey);
+}
+
+async function restoreSession() {
+  if (!magic) await initMagic();
+  const loggedIn = await magic.user.isLoggedIn();
+  if (!loggedIn) {
+    showView("login");
+    return;
+  }
+  didToken = await magic.user.getIdToken();
+  const meta = await magic.user.getMetadata();
+  walletAddress = meta.publicAddress;
+  walletLabel.textContent = `Wallet: ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`;
+  showView("home");
+  await loadAgents();
+}
+
+loginBtn.addEventListener("click", async () => {
+  const email = emailInput.value.trim();
+  if (!email) {
+    loginStatus.textContent = "Enter your email.";
+    return;
+  }
+  loginBtn.disabled = true;
+  loginStatus.textContent = "Check your email for the OTP code…";
+  try {
+    if (!magic) await initMagic();
+    await magic.auth.loginWithEmailOTP({ email });
+    didToken = await magic.user.getIdToken();
+    const meta = await magic.user.getMetadata();
+    walletAddress = meta.publicAddress;
+    walletLabel.textContent = `Wallet: ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`;
+    loginStatus.textContent = "";
+    showView("home");
+    await loadAgents();
+  } catch (err) {
+    loginStatus.textContent = `Login failed: ${err.message}`;
+  } finally {
+    loginBtn.disabled = false;
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  if (magic) await magic.user.logout();
+  didToken = null;
+  walletAddress = null;
+  showView("login");
+});
+
 async function loadAgents() {
   const res = await fetch("/agents");
   const agents = await res.json();
@@ -49,7 +111,6 @@ async function loadAgents() {
     btn.setAttribute("role", "listitem");
     btn.innerHTML = `<strong>${agent.name}</strong><span>${agent.description} · suggested $${agent.suggestedBudget}</span>`;
     btn.addEventListener("click", () => {
-      selectedAgentId = agent.id;
       document.querySelectorAll(".agent-card").forEach((c) => c.classList.remove("selected"));
       btn.classList.add("selected");
       goalInput.value = agent.goal;
@@ -75,6 +136,12 @@ function renderResult(result) {
 }
 
 async function startRun() {
+  if (!didToken) {
+    alert("Please sign in with Magic first.");
+    showView("login");
+    return;
+  }
+
   const goal = goalInput.value.trim();
   const budget = parseFloat(budgetInput.value);
   if (!goal) {
@@ -96,8 +163,13 @@ async function startRun() {
     const res = await fetch("/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ goal, budget, stream: true }),
+      body: JSON.stringify({ goal, budget, stream: true, didToken }),
     });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? `HTTP ${res.status}`);
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -121,14 +193,14 @@ async function startRun() {
             appendLog(`  ${step.service}: ~$${step.estCostUsdc.toFixed(4)}`);
           }
           appendLog(`  Total est: $${event.plan.totalEstUsdc.toFixed(4)}\n`);
+        } else if (event.type === "ua_topup") {
+          appendLog(`[ua] cross-chain top-up $${event.amountUsdc} tx=${event.transactionId}`);
         } else if (event.type === "step_start") {
           appendLog(`> ${event.step.service}…`);
         } else if (event.type === "payment") {
           spent += event.line.usdc;
           updateBudgetBar(spent, budget);
-          appendLog(
-            `  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash || "pending"}`,
-          );
+          appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash}`);
         } else if (event.type === "error") {
           appendLog(`ERROR: ${event.message}`);
         } else if (event.type === "done") {
@@ -150,4 +222,4 @@ stopBtn.addEventListener("click", async () => {
 
 againBtn.addEventListener("click", () => showView("home"));
 
-loadAgents();
+restoreSession();

@@ -1,4 +1,5 @@
 import { atomicToUsdc, usdcToAtomic } from "../config/chains.js";
+import { getEoaBaseUsdcBalance } from "../wallet/eoa.js";
 import { getUniversalAccountWallet } from "../wallet/ua.js";
 
 export class BudgetOverflowError extends Error {
@@ -13,10 +14,16 @@ export class BudgetOverflowError extends Error {
   }
 }
 
+export interface UaTopUpResult {
+  transactionId: string;
+  amountUsdc: number;
+}
+
 export class BudgetGuard {
-  private capAtomic: bigint = 0n;
+  private readonly capAtomic: bigint;
   private spentAtomic: bigint = 0n;
   private funded = false;
+  uaTopUp?: UaTopUpResult;
 
   constructor(private readonly capUsdc: number) {
     this.capAtomic = usdcToAtomic(capUsdc);
@@ -30,41 +37,55 @@ export class BudgetGuard {
     return atomicToUsdc(this.spentAtomic);
   }
 
-  get remaining(): number {
-    return Math.max(0, this.capUsdc - this.spent);
-  }
+  /**
+   * Fund run wallet: UA cross-chain top-up → EOA on Base (7702 path), then verify
+   * on-chain EOA balance covers the cap. Chain rejects payments when EOA is empty.
+   */
+  async fundRunWallet(): Promise<UaTopUpResult> {
+    const ua = getUniversalAccountWallet();
+    const current = await getEoaBaseUsdcBalance();
+    const uaAmountUsdc =
+      current < this.capAtomic
+        ? this.capUsdc - atomicToUsdc(current)
+        : 0.01;
 
-  /** Fund the run wallet with exactly the budget cap via UA transfer to self. */
-  async fundRunWallet(): Promise<void> {
-    const wallet = getUniversalAccountWallet();
-    const address = await wallet.getAddress();
+    const result = await ua.crossChainTopUpEoa(uaAmountUsdc.toFixed(6));
+    this.uaTopUp = { transactionId: result.transactionId, amountUsdc: uaAmountUsdc };
 
-    // Ensure UA holds at least cap USDC on Arbitrum for hard on-chain limit
-    const onChain = await wallet.getOnChainUsdcBalance();
-    if (onChain < this.capAtomic) {
-      const needed = this.capUsdc - atomicToUsdc(onChain);
-      if (needed > 0) {
-        console.log(`[budget] Funding run wallet with ${needed.toFixed(6)} USDC to ${address}`);
-        await wallet.transferUsdc(needed.toFixed(6), address);
-      }
+    const after = await getEoaBaseUsdcBalance();
+    if (after < this.capAtomic) {
+      throw new Error(
+        `EOA Base USDC ${atomicToUsdc(after).toFixed(6)} < run cap ${this.capUsdc.toFixed(6)} after UA top-up. ` +
+          "Fund the Universal Account with USDC before starting a run.",
+      );
     }
+
     this.funded = true;
+    return this.uaTopUp;
   }
 
   async getRemaining(): Promise<number> {
-    const wallet = getUniversalAccountWallet();
-    const onChain = await wallet.getOnChainUsdcBalance();
-    const chainRemaining = atomicToUsdc(onChain);
-    const trackedRemaining = this.remaining;
-    return Math.min(chainRemaining, trackedRemaining);
+    const onChain = atomicToUsdc(await getEoaBaseUsdcBalance());
+    return Math.min(Math.max(0, this.capUsdc - this.spent), onChain);
   }
 
-  preCheck(quoteUsdc: number): void {
+  async preCheck(quoteUsdc: number): Promise<void> {
+    this.assertFunded();
     const quoteAtomic = usdcToAtomic(quoteUsdc);
     const projected = this.spentAtomic + quoteAtomic;
     if (projected > this.capAtomic) {
       throw new BudgetOverflowError(
         `Budget overflow: spent ${this.spent.toFixed(6)} + quote ${quoteUsdc.toFixed(6)} > cap ${this.capUsdc.toFixed(6)} USDC`,
+        this.spent,
+        this.capUsdc,
+        quoteUsdc,
+      );
+    }
+
+    const onChain = await getEoaBaseUsdcBalance();
+    if (onChain < quoteAtomic) {
+      throw new BudgetOverflowError(
+        `On-chain insufficient: EOA has ${atomicToUsdc(onChain).toFixed(6)} USDC, need ${quoteUsdc.toFixed(6)}`,
         this.spent,
         this.capUsdc,
         quoteUsdc,
@@ -87,12 +108,4 @@ export async function fundRunWallet(capUsdc: number): Promise<BudgetGuard> {
   const guard = new BudgetGuard(capUsdc);
   await guard.fundRunWallet();
   return guard;
-}
-
-export function getRemaining(guard: BudgetGuard): Promise<number> {
-  return guard.getRemaining();
-}
-
-export function preCheck(guard: BudgetGuard, quoteUsdc: number): void {
-  guard.preCheck(quoteUsdc);
 }

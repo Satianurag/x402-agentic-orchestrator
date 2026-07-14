@@ -1,114 +1,60 @@
 # x402 Agentic Orchestrator
 
-Pay-per-use AI agent that completes an end-to-end job by autonomously paying multiple x402 micro-services in USDC, bounded by an on-chain budget.
+Pay-per-use AI agent that completes an end-to-end job by autonomously paying x402 micro-services in USDC, bounded by an on-chain EOA budget on Base.
 
-## Stack
+## Architecture (fixed)
 
-- **TypeScript** / Node 20+ / ESM
-- **Particle Universal Accounts** (`@particle-network/universal-account-sdk`) — EIP-7702 mode
-- **Magic** (`magic-sdk`, `@magic-sdk/admin`) — embedded wallet / server token validation
-- **x402 v2** (`@x402/fetch`, `@x402/express`, `@x402/evm`, `@x402/core`)
-- **Settlement chain (our seller):** Arbitrum One / Arbitrum Sepolia via Coinbase CDP facilitator
-- **UI:** plain HTML + CSS + vanilla JS in `public/`
+| Layer | Role |
+|-------|------|
+| **EOA** (`PRIVATE_KEY`) | Signs all x402 payments on Base mainnet; on-chain USDC balance = hard cap |
+| **UA** (Particle 7702) | Cross-chain top-up: unified balance → EOA on Base at run start (guaranteed 7702 tx) |
+| **Magic** | UI email/OTP login; `didToken` verified server-side; must match `PRIVATE_KEY` EOA |
+| **Seller** `/synthesize` | Arbitrum One (mainnet) settlement + OpenAI LLM synthesis |
 
-## What one run does
-
-1. User picks a prebuilt agent or enters a custom goal + USDC budget.
-2. Agent builds a **plan** (services, endpoints, estimated cost).
-3. Agent **executes** each step via `@x402/fetch` (402 → sign USDC → retry).
-4. **Budget guard** funds the run wallet and pre-checks each quote; on-chain balance is the hard cap.
-5. Returns a **deliverable** + spend report (per-call cost, tx hash, explorer link).
-
-## Prerequisites
-
-- Node 20+
-- [Particle](https://dashboard.particle.network) project (`PARTICLE_PROJECT_ID`, `PARTICLE_CLIENT_KEY`, `PARTICLE_APP_ID`)
-- [Magic](https://dashboard.magic.link) keys (for production embedded-wallet 7702 flows)
-- [CDP](https://cdp.coinbase.com) API keys for the Arbitrum facilitator
-- A funded EOA (`PRIVATE_KEY`) — dev/CLI signer that owns the Universal Account
-- Arbitrum Sepolia (or mainnet) USDC + ETH for gas
+External x402 services (Tavily, CoinGecko, etc.) **always settle on Base mainnet** — requires `NETWORK=mainnet`.
 
 ## Setup
 
 ```bash
-cd uxmaxx
 cp .env.example .env
-# fill in all keys
+# Fill ALL keys — no fallbacks; missing keys throw at runtime
 npm install
-```
-
-### Required `.env` keys
-
-| Variable | Description |
-|----------|-------------|
-| `NETWORK` | `sepolia` (default) or `mainnet` |
-| `PRIVATE_KEY` | Run wallet owner EOA (dev/CLI; Magic EOA in production UI) |
-| `PARTICLE_PROJECT_ID` | Particle dashboard |
-| `PARTICLE_CLIENT_KEY` | Particle dashboard |
-| `PARTICLE_APP_ID` | Particle dashboard |
-| `MAGIC_SECRET_KEY` | Magic admin secret |
-| `MAGIC_PUBLISHABLE_KEY` | Magic publishable key (browser flows) |
-| `ARBITRUM_RPC_URL` | Arbitrum Sepolia RPC |
-| `ARBITRUM_MAINNET_RPC_URL` | Arbitrum One RPC (mainnet) |
-| `SELLER_PAY_TO` | Address that receives USDC on `/synthesize` |
-| `CDP_API_KEY_ID` | CDP facilitator auth |
-| `CDP_API_KEY_SECRET` | CDP facilitator auth |
-| `CDP_FACILITATOR_URL` | Default: `https://api.cdp.coinbase.com/platform/v2/x402` |
-| `PORT` | Server port (default `4020`) |
-| `SELLER_BASE_URL` | Base URL for agent to call `/synthesize` (default `http://localhost:4020`) |
-
-USDC addresses are loaded from [Circle's official list](https://developers.circle.com/stablecoins/usdc-contract-addresses) in `src/config/chains.ts` — not hardcoded from memory.
-
-## Run
-
-### Backend + UI
-
-```bash
-npm start
-# open http://localhost:4020
-```
-
-### CLI
-
-```bash
-npm run cli -- --goal "Research Bitcoin trends" --budget 0.50 --network sepolia
-```
-
-### Typecheck
-
-```bash
 npm run typecheck
 ```
 
-## Project layout
+### Required `.env`
 
+| Key | Purpose |
+|-----|---------|
+| `NETWORK` | `mainnet` (required for live agent runs) |
+| `PRIVATE_KEY` | EOA that pays x402 — **must match Magic wallet address** |
+| `PARTICLE_*` | Universal Account project |
+| `MAGIC_SECRET_KEY` / `MAGIC_PUBLISHABLE_KEY` | Auth |
+| `CDP_API_KEY_*` | Facilitator (required) |
+| `SELLER_PAY_TO` | Receives Arbitrum USDC on `/synthesize` |
+| `OPENAI_API_KEY` | LLM deliverable synthesis |
+| `BASE_RPC_URL` | Base mainnet RPC |
+
+Fund before running:
+1. **Universal Account** — USDC (cross-chain unified balance) for UA top-up
+2. **EOA on Base** — will receive top-up; chain rejects payments when empty
+
+## Run
+
+```bash
+npm start          # UI at http://localhost:4020 (Magic login required)
+npm run cli -- --goal "BTC price brief" --budget 0.15 --network mainnet
 ```
-src/
-  config/chains.ts      # Arbitrum/Base chains, Circle USDC, CAIP-2, CDP facilitator
-  wallet/ua.ts          # Particle UA (7702) + Magic admin helpers
-  budget/guard.ts       # fundRunWallet, getRemaining, preCheck
-  services/*.ts         # x402 clients (Tavily, CoinGecko, Firecrawl, Browserbase, Exa, seller)
-  agent/plan.ts         # goal → plan
-  agent/run.ts          # execute plan + synthesize deliverable
-  server/seller.ts      # Express: x402 /synthesize, REST, static UI
-  cli.ts                # terminal runner
-public/
-  index.html, styles.css, app.js
-```
 
-## x402 services consumed
+## Budget enforcement (real)
 
-| Service | Endpoint |
-|---------|----------|
-| Tavily | `POST https://x402.tavily.com/search` |
-| CoinGecko | `GET https://api.coingecko.com/x402/simple/price` |
-| Firecrawl | `POST https://api.firecrawl.dev/v1/x402/search` |
-| Browserbase | `POST https://x402.browserbase.com/browser/session/create` |
-| Exa | `POST https://api.exa.ai/search` |
-| **Our seller** | `POST /synthesize` (Arbitrum USDC via CDP facilitator) |
+1. `fundRunWallet(cap)` — UA cross-chain transfer → EOA on Base (7702 path)
+2. `preCheck(quote)` — in-memory cap + on-chain EOA Base USDC check
+3. x402 payments drain EOA; insufficient USDC = chain rejection
 
-## Notes
+## No fallbacks
 
-- **7702 mode** requires an embedded wallet signer (Magic). CLI/dev uses `PRIVATE_KEY` with viem `signAuthorization` for inline 7702 delegation.
-- External x402 services mostly settle on **Base**; our `/synthesize` route settles on **Arbitrum** for proof.
-- Never commit `.env` or real keys.
+- Cost estimates: live `402` probe only (throws on failure)
+- Payments: require `PAYMENT-RESPONSE` settlement header
+- Synthesis: OpenAI only (no JSON concat)
+- External services: blocked unless `NETWORK=mainnet`

@@ -3,7 +3,7 @@ import { coingeckoEstimateCost } from "../services/coingecko.js";
 import { firecrawlEstimateCost } from "../services/firecrawl.js";
 import { browserbaseEstimateCost } from "../services/browserbase.js";
 import { exaEstimateCost } from "../services/exa.js";
-import { SYNTHESIZE_EST_COST_USDC } from "../services/seller.js";
+import { synthesizeEstimateCost } from "../services/seller.js";
 
 export type ServiceName =
   | "tavily"
@@ -97,7 +97,7 @@ async function estimateStep(
       return {
         service,
         endpoint: "POST /synthesize (Arbitrum settlement)",
-        estCostUsdc: SYNTHESIZE_EST_COST_USDC,
+        estCostUsdc: synthesizeEstimateCost(),
       };
   }
 }

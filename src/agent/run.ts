@@ -1,4 +1,5 @@
-import { fundRunWallet, BudgetOverflowError, type BudgetGuard } from "../budget/guard.js";
+import { fundRunWallet, type BudgetGuard } from "../budget/guard.js";
+import { assertExternalServicesAvailable } from "../config/chains.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
 import { tavilySearch } from "../services/tavily.js";
 import { coingeckoPrice } from "../services/coingecko.js";
@@ -6,6 +7,7 @@ import { firecrawlSearch } from "../services/firecrawl.js";
 import { browserbaseCreateSession } from "../services/browserbase.js";
 import { exaSearch } from "../services/exa.js";
 import { synthesizeDeliverable } from "../services/seller.js";
+import { resolveRunSession } from "../wallet/session.js";
 import type { PaymentResult } from "../services/x402-client.js";
 
 export interface SpendLine {
@@ -20,10 +22,12 @@ export interface RunResult {
   spend: SpendLine[];
   totalUsdc: number;
   plan: AgentPlan;
+  uaTopUpTxId?: string;
 }
 
 export type RunEvent =
   | { type: "plan"; plan: AgentPlan }
+  | { type: "ua_topup"; transactionId: string; amountUsdc: number }
   | { type: "step_start"; step: PlanStep; index: number }
   | { type: "payment"; line: SpendLine; remaining: number }
   | { type: "step_done"; step: PlanStep; index: number }
@@ -33,6 +37,8 @@ export type RunEvent =
 export interface RunOptions {
   goal: string;
   budgetUsdc: number;
+  didToken?: string;
+  requireMagic?: boolean;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
 }
@@ -69,66 +75,72 @@ async function executeStep(
 }
 
 export async function runAgent(options: RunOptions): Promise<RunResult> {
-  const { goal, budgetUsdc, onEvent, signal } = options;
+  const { goal, budgetUsdc, didToken, requireMagic = false, onEvent, signal } = options;
   abortController = new AbortController();
   const mergedSignal = signal ?? abortController.signal;
+
+  if (requireMagic && !didToken) {
+    throw new Error("Magic login required — provide didToken from the UI");
+  }
+
+  await resolveRunSession(didToken);
+  assertExternalServicesAvailable();
 
   const plan = await createPlan(goal);
   onEvent?.({ type: "plan", plan });
 
   if (plan.totalEstUsdc > budgetUsdc) {
-    console.warn(
-      `[agent] Plan estimate $${plan.totalEstUsdc.toFixed(4)} exceeds budget $${budgetUsdc.toFixed(4)} — may hard-stop mid-run`,
+    throw new Error(
+      `Plan estimate $${plan.totalEstUsdc.toFixed(4)} exceeds budget $${budgetUsdc.toFixed(4)} USDC`,
     );
   }
 
   const guard = await fundRunWallet(budgetUsdc);
+  const uaTopUp = guard.uaTopUp;
+  if (uaTopUp) {
+    onEvent?.({ type: "ua_topup", transactionId: uaTopUp.transactionId, amountUsdc: uaTopUp.amountUsdc });
+  }
+
   const spend: SpendLine[] = [];
   const context: unknown[] = [];
+  let deliverable = "";
 
   for (let i = 0; i < plan.steps.length; i++) {
-    if (mergedSignal.aborted) {
-      throw new Error("Run aborted");
-    }
+    if (mergedSignal.aborted) throw new Error("Run aborted");
 
     const step = plan.steps[i];
     onEvent?.({ type: "step_start", step, index: i });
 
-    try {
-      const result = await executeStep(step, goal, guard, context);
-      context.push({ service: step.service, data: result.data });
+    const result = await executeStep(step, goal, guard, context);
+    context.push({ service: step.service, data: result.data });
 
-      const line: SpendLine = {
-        service: step.service,
-        usdc: result.usdc,
-        txHash: result.txHash,
-        explorerUrl: result.explorerUrl,
-      };
-      spend.push(line);
-      onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
-      onEvent?.({ type: "step_done", step, index: i });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      onEvent?.({ type: "error", message });
-      if (err instanceof BudgetOverflowError) throw err;
-      console.error(`[agent] Step ${step.service} failed:`, message);
-      context.push({ service: step.service, error: message });
+    const line: SpendLine = {
+      service: step.service,
+      usdc: result.usdc,
+      txHash: result.txHash,
+      explorerUrl: result.explorerUrl,
+    };
+    spend.push(line);
+    onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
+    onEvent?.({ type: "step_done", step, index: i });
+
+    if (step.service === "synthesize") {
+      const payload = result.data as { deliverable?: string };
+      if (!payload.deliverable) {
+        throw new Error("Synthesize step returned no deliverable");
+      }
+      deliverable = payload.deliverable;
     }
   }
 
-  const synth = context.find((c) => (c as { service?: string }).service === "synthesize") as
-    | { data?: { deliverable?: string } }
-    | undefined;
-  const deliverable =
-    synth?.data?.deliverable ??
-    JSON.stringify(
-      { goal, summary: "Collected context from paid x402 services", context },
-      null,
-      2,
-    );
-
   const totalUsdc = spend.reduce((s, l) => s + l.usdc, 0);
-  const result: RunResult = { deliverable, spend, totalUsdc, plan };
-  onEvent?.({ type: "done", result });
-  return result;
+  const runResult: RunResult = {
+    deliverable,
+    spend,
+    totalUsdc,
+    plan,
+    uaTopUpTxId: uaTopUp?.transactionId,
+  };
+  onEvent?.({ type: "done", result: runResult });
+  return runResult;
 }
