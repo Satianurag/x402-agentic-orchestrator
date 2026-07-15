@@ -1,5 +1,4 @@
 import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
-import { EVMExtension } from "https://cdn.jsdelivr.net/npm/@magic-ext/evm@25.9.0/+esm";
 import { Signature } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
 
 const views = {
@@ -51,8 +50,26 @@ function updateBudgetBar(spent, cap) {
 
 async function initMagic() {
   const res = await fetch("/api/config");
+  if (!res.ok) throw new Error(`Config failed (${res.status})`);
   const cfg = await res.json();
-  magic = new Magic(cfg.magicPublishableKey, { extensions: [new EVMExtension()] });
+  if (!cfg.magicPublishableKey) throw new Error("Missing Magic publishable key");
+  // sign7702Authorization is built into magic-sdk@33.4+ — no @magic-ext/evm needed for login.
+  magic = new Magic(cfg.magicPublishableKey, {
+    network: cfg.magicNetwork ?? "ethereum",
+  });
+}
+
+/** magic-sdk v30+ nests addresses under wallets.ethereum.publicAddress */
+function resolveWalletAddress(meta) {
+  return meta?.wallets?.ethereum?.publicAddress ?? meta?.publicAddress ?? null;
+}
+
+async function loadUserSession() {
+  didToken = await magic.user.getIdToken();
+  const meta = await magic.user.getInfo();
+  walletAddress = resolveWalletAddress(meta);
+  if (!walletAddress) throw new Error("Magic wallet has no Ethereum address");
+  walletLabel.textContent = `Wallet: ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`;
 }
 
 async function restoreSession() {
@@ -62,10 +79,7 @@ async function restoreSession() {
     showView("login");
     return;
   }
-  didToken = await magic.user.getIdToken();
-  const meta = await magic.user.getMetadata();
-  walletAddress = meta.publicAddress;
-  walletLabel.textContent = `Wallet: ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`;
+  await loadUserSession();
   showView("home");
   await loadAgents();
 }
@@ -80,11 +94,8 @@ loginBtn.addEventListener("click", async () => {
   loginStatus.textContent = "Check your email for the OTP code…";
   try {
     if (!magic) await initMagic();
-    await magic.auth.loginWithEmailOTP({ email });
-    didToken = await magic.user.getIdToken();
-    const meta = await magic.user.getMetadata();
-    walletAddress = meta.publicAddress;
-    walletLabel.textContent = `Wallet: ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`;
+    await magic.auth.loginWithEmailOTP({ email, showUI: true });
+    await loadUserSession();
     loginStatus.textContent = "";
     showView("home");
     await loadAgents();
@@ -273,5 +284,13 @@ stopBtn.addEventListener("click", async () => {
 });
 
 againBtn.addEventListener("click", () => showView("home"));
+
+const launchBudget = new URLSearchParams(window.location.search).get("budget");
+if (launchBudget && budgetInput) {
+  const parsed = parseFloat(launchBudget);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    budgetInput.value = String(parsed);
+  }
+}
 
 restoreSession();

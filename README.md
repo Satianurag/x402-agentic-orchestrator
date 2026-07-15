@@ -10,7 +10,7 @@ Pay-per-use AI agent that completes an end-to-end job by autonomously paying x40
 | **UA** (Particle EIP-7702) | Cross-chain top-up: unified UA balance → EOA at run start |
 | **Magic** (UI) | Email/OTP login; embedded wallet is the EIP-7702 owner & signer via SSE sign bridge |
 | **PRIVATE_KEY** (CLI) | CLI/E2E signer only — not required to match Magic |
-| **Seller** `/synthesize` | Arbitrum Sepolia (testnet) or Arbitrum One (mainnet demo) + OpenAI synthesis |
+| **Seller** `/synthesize` | Arbitrum Sepolia (testnet) or Arbitrum One (mainnet demo) + Gemini synthesis |
 
 **Testnet (default `NETWORK=sepolia`):**
 
@@ -66,7 +66,7 @@ Asserts:
 1. Real Particle UA `transactionId` for cross-chain top-up
 2. ≥1 on-chain tx on **Base Sepolia** (dev-harness x402)
 3. On-chain tx on **Arbitrum Sepolia** for `/synthesize`
-4. Non-empty OpenAI deliverable
+4. Non-empty Gemini deliverable
 
 Prints every explorer link; fails on missing/fake values.
 
@@ -87,5 +87,5 @@ npm run cli -- --goal "BTC price brief" --budget 0.50 --network mainnet
 
 - Cost estimates: live HTTP 402 probe only (throws on failure)
 - Payments: require `PAYMENT-RESPONSE` settlement header (v2)
-- Synthesis: OpenAI only (`OPENAI_BASE_URL` + `OPENAI_MODEL` configurable)
+- Synthesis: Gemini only (`gemini-3.1-flash-lite` via `@google/genai`, `GEMINI_API_KEY` required)
 - RPC URLs: required env vars (no public default RPCs)

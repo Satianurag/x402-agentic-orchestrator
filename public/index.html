@@ -1,93 +1,336 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>x402 Agentic Orchestrator</title>
-  <link rel="stylesheet" href="/styles.css" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>x402 AGENTIC ORCHESTRATOR — Pay-per-use AI agent that pays its own way</title>
+<meta name="description" content="Pay-per-use AI agent that completes end-to-end jobs by autonomously paying x402 micro-services in USDC, bounded by an on-chain EOA budget. Real APIs. Real settlement. No mocks."/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/landing.css"/>
 </head>
 <body>
-  <header>
-    <h1>x402 Agentic Orchestrator</h1>
-    <p>Pay-per-use AI agent with on-chain USDC budget</p>
-  </header>
+<div class="paper-bg"></div>
 
-  <main>
-    <!-- LOGIN -->
-    <section id="view-login" class="view active">
-      <h2>Sign in</h2>
-      <p class="hint">Magic email login provisions your embedded wallet (7702 signer).</p>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-track" id="tickerTrack">
+    <span><i class="ticker-dot"></i> NO MOCKS • REAL X402 SETTLEMENT • BASE SEPOLIA + ARBITRUM SEPOLIA • EIP-7702 UA TOP-UP • USDC BUDGET ENFORCED</span>
+    <span><i class="ticker-dot"></i> TAVILY • COINGECKO • GEMINI SYNTHESIS • CDP FACILITATOR • MAGIC SSE SIGN BRIDGE</span>
+    <span><i class="ticker-dot"></i> NO FALLBACKS • LIVE 402 PROBE • PAYMENT-RESPONSE V2 • ON-CHAIN PROOF</span>
+    <span><i class="ticker-dot"></i> NO MOCKS • REAL X402 SETTLEMENT • BASE SEPOLIA + ARBITRUM SEPOLIA • EIP-7702 UA TOP-UP • USDC BUDGET ENFORCED</span>
+    <span><i class="ticker-dot"></i> TAVILY • COINGECKO • GEMINI SYNTHESIS • CDP FACILITATOR • MAGIC SSE SIGN BRIDGE</span>
+  </div>
+</div>
+
+<header class="nav-wrap">
+  <nav class="nav">
+    <div class="nav-left">
+      <a class="logo" href="/">X402 <b>// ORCHESTRATOR</b></a>
+      <div class="nav-links" id="navLinks">
+        <a class="nav-link" href="#arch">Architecture</a>
+        <a class="nav-link" href="#how">How it Works</a>
+        <a class="nav-link" href="#budget">Budget</a>
+        <a class="nav-link" href="#manifesto">No Fallbacks</a>
+        <a class="nav-link" href="/app">Launch App</a>
       </div>
-      <button id="login-btn" type="button">Send login code</button>
-      <p id="login-status" class="login-status" aria-live="polite"></p>
-    </section>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center">
+      <a class="nav-cta" href="/app">LAUNCH APP →</a>
+      <a class="nav-cta" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener" style="background:var(--paper)">GITHUB ↗</a>
+      <button class="hamburger" id="ham" aria-label="Menu">≡</button>
+    </div>
+  </nav>
+</header>
 
-    <!-- HOME -->
-    <section id="view-home" class="view" hidden>
-      <div class="session-bar">
-        <span id="wallet-label">Wallet: —</span>
-        <button id="logout-btn" type="button" class="link-btn">Log out</button>
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="reveal">
+      <div class="badge-row">
+        <span class="badge lime" id="networkBadge">⚡ LIVE — LOADING NETWORK…</span>
+        <span class="badge cyan">◍ REAL X402 + REAL APIS</span>
+        <span class="badge pink">PAYMENT-REQUIRED V2</span>
+        <span class="badge yellow">BUILT FOR AGENT ECONOMY</span>
       </div>
-
-      <h2>Start a run</h2>
-
-      <fieldset>
-        <legend>Prebuilt agents</legend>
-        <div id="agent-list" class="agent-list" role="list"></div>
-      </fieldset>
-
-      <div class="field">
-        <label for="goal">Custom goal</label>
-        <textarea id="goal" rows="4" placeholder="Describe what the agent should accomplish…"></textarea>
+      <h1 class="hero-h1">
+        <span class="stroke">AGENT THAT</span>
+        PAYS ITS<br/>
+        <span class="fill">OWN WAY<i>USDC</i></span>
+      </h1>
+      <p class="hero-sub">
+        Pay-per-use AI agent that completes an end-to-end job by <strong>autonomously paying x402 micro-services</strong> in USDC.
+        Bounded by an on-chain EOA budget. <strong>No mocks. No fallbacks. Real settlement</strong> on Base + Arbitrum via x402.
+      </p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" id="runBtn" type="button">LAUNCH APP — RUN AGENT <span class="arrow">→</span></button>
+        <a class="btn btn-secondary" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank">READ README ↗</a>
       </div>
-
-      <div class="field">
-        <label for="budget">Budget (USDC)</label>
-        <input id="budget" type="number" min="0.01" step="0.01" value="0.15" />
+      <div class="cli-box">
+        <span>$</span><code id="cliCode">npm run cli -- --goal "BTC price brief" --budget 0.15 --network mainnet</code>
+        <button class="copy-btn" id="copyBtn">COPY</button>
       </div>
+    </div>
 
-      <button id="run-btn" type="button">Run</button>
-    </section>
-
-    <!-- RUNNING -->
-    <section id="view-running" class="view" hidden>
-      <h2>Running</h2>
-      <div class="budget-bar" aria-label="Budget usage">
-        <div id="budget-fill" class="budget-fill"></div>
+    <div class="hero-visual reveal" style="transition-delay:.12s">
+      <div class="board" id="board">
+        <div class="board-grid"></div>
+        <div class="board-header">
+          <span>orchestrator.exe // budget enforcement live</span>
+          <div class="window-dots"><i style="background:var(--pink)"></i><i style="background:var(--yellow)"></i><i style="background:var(--lime)"></i></div>
+        </div>
+        <div class="budget-bar-wrap">
+          <div class="budget-label"><span>EOA BALANCE — BASE SEPOLIA USDC</span><span id="budgetLabel">$0.15 → $0.04</span></div>
+          <div class="budget-track"><div class="budget-fill" id="budgetFill"></div><div class="budget-tx"></div></div>
+        </div>
+        <div class="flow stagger" id="flow">
+          <div class="flow-card" style="--rot:-1deg">
+            <div class="flow-left"><div class="flow-icon" style="background:var(--yellow)">T</div><div><div>TAVILY SEARCH</div><small style="font-weight:400">GET /search → 402 → PAID</small></div></div>
+            <span class="flow-status paid">0.01 PAID ✓</span>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-card" style="--rot:1deg">
+            <div class="flow-left"><div class="flow-icon" style="background:var(--cyan)">C</div><div><div>COINGECKO PRICES</div><small style="font-weight:400">GET /price → 402 → PAID</small></div></div>
+            <span class="flow-status paid">0.01 PAID ✓</span>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-card" style="--rot:-0.8deg">
+            <div class="flow-left"><div class="flow-icon" style="background:var(--lime)">S</div><div><div>/SYNTHESIZE — ARBITRUM</div><small style="font-weight:400">LOCAL FACILITATOR SETTLEMENT</small></div></div>
+            <span class="flow-status pending">0.002 PENDING</span>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-card" style="--rot:0.6deg; background:var(--ink); color:var(--paper)">
+            <div class="flow-left"><div class="flow-icon" style="background:var(--paper); color:var(--ink)">AI</div><div><div>GEMINI DELIVERABLE</div><small style="font-weight:400">NON-EMPTY REPORT + EXPLORER LINKS</small></div></div>
+            <span class="flow-status settled" style="background:var(--paper); color:var(--ink)">SETTLED ✓</span>
+          </div>
+        </div>
+        <div class="stickers">
+          <div class="sticker sticker-usdc">USDC • BOUNDED</div>
+          <div class="sticker sticker-402">402</div>
+          <div class="sticker sticker-base">EIP-7702 UA → EOA</div>
+        </div>
       </div>
-      <p id="budget-label" class="budget-label">$0.00 / $0.00 USDC</p>
-      <pre id="run-log" class="run-log" aria-live="polite"></pre>
-      <button id="stop-btn" type="button" class="danger">Stop</button>
-    </section>
+    </div>
+  </section>
 
-    <!-- RESULT -->
-    <section id="view-result" class="view" hidden>
-      <h2>Result</h2>
-      <article id="deliverable" class="deliverable"></article>
-      <table id="spend-table" class="spend-table">
-        <caption>Spend report</caption>
-        <thead>
-          <tr>
-            <th scope="col">Service</th>
-            <th scope="col">Cost (USDC)</th>
-            <th scope="col">Transaction</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-        <tfoot>
-          <tr>
-            <th scope="row">Total</th>
-            <td id="total-spent" colspan="2"></td>
-          </tr>
-        </tfoot>
-      </table>
-      <button id="again-btn" type="button">New run</button>
-    </section>
-  </main>
+  <!-- LOGOS -->
+  <section class="logos reveal">
+    <div class="logos-inner">
+      <div class="logos-label">BUILT ON REAL RAILS</div>
+      <div class="logos-list">
+        <div class="logo-chip"><b>BASE</b> SEPOLIA</div>
+        <div class="logo-chip">ARBITRUM SEPOLIA</div>
+        <div class="logo-chip"><b>PARTICLE</b> UA</div>
+        <div class="logo-chip">MAGIC AUTH + SSE</div>
+        <div class="logo-chip">CDP FACILITATOR</div>
+        <div class="logo-chip"><b>GEMINI</b> SYNTHESIS</div>
+      </div>
+    </div>
+  </section>
 
-  <script src="/app.js" type="module"></script>
-</body>
-</html>
+  <!-- VALUE -->
+  <section class="section" id="value">
+    <div class="section-head reveal">
+      <div>
+        <div class="section-kicker">WHY THIS EXISTS</div>
+        <h2 class="section-title">AGENTS SHOULDN'T BEG.<br/><span>THEY SHOULD PAY.</span></h2>
+      </div>
+      <p class="section-desc">Most agent demos fake it. This one doesn't. Every tool call is a real HTTP 402, real USDC on-chain, real upstream API. If settlement fails, the job fails. That's the point.</p>
+    </div>
+    <div class="grid-3 stagger">
+      <div class="card" style="--rot:-1deg">
+        <div class="card-num">01</div>
+        <h3 class="card-title">REAL X402, NOT MOCKS</h3>
+        <p class="card-text">Dev-harness runs real x402 proxies for Tavily, CoinGecko, etc. Live 402 probe, no estimated costs. Require PAYMENT-RESPONSE header v2.</p>
+        <div class="card-meta"><span class="meta-tag lime">CDP facilitator</span><span class="meta-tag yellow">L402 invoice</span></div>
+      </div>
+      <div class="card" style="--rot:0.8deg">
+        <div class="card-num">02</div>
+        <h3 class="card-title">BUDGET OR DIE</h3>
+        <p class="card-text">UA cross-chain top-up → EOA at run start. preCheck() against in-memory cap + on-chain USDC. Insufficient funds = chain rejection, not silent skip.</p>
+        <div class="card-meta"><span class="meta-tag cyan">fundRunWallet(cap)</span><span class="meta-tag pink">preCheck(quote)</span></div>
+      </div>
+      <div class="card" style="--rot:-0.6deg">
+        <div class="card-num">03</div>
+        <h3 class="card-title">E2E ON-CHAIN PROOF</h3>
+        <p class="card-text">test:e2e asserts ≥1 Base Sepolia tx, Arbitrum Sepolia tx for /synthesize, real Particle UA transactionId, non-empty Gemini deliverable. Prints explorer links.</p>
+        <div class="card-meta"><span class="meta-tag yellow">explorer links</span><span class="meta-tag lime">no fakes</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCH -->
+  <section class="section" id="arch">
+    <div class="section-head reveal">
+      <div>
+        <div class="section-kicker">ARCHITECTURE — NO SECRETS</div>
+        <h2 class="section-title">FIVE LAYERS.<br/><span>ONE RULE: PAY.</span></h2>
+      </div>
+      <p class="section-desc">Read from .env naming only. Missing keys throw at runtime. No public default RPCs. That's intentional.</p>
+    </div>
+    <div class="arch-diagram reveal">
+      <div class="arch-left">
+        <div style="font-family:var(--font-display); font-size:32px; line-height:0.9; text-transform:uppercase; color:var(--lime)">EOA SIGNS.<br/>UA FUNDS.<br/>MAGIC LOGS IN.<br/>CHAIN REJECTS<br/>IF BROKE.</div>
+        <div style="margin-top:18px; font-family:var(--font-mono); font-size:12px; line-height:1.6; color:#AAA">Seller /synthesize on Arbitrum Sepolia (testnet) or Arbitrum One (mainnet demo) + Gemini synthesis. Buyer payments on Base Sepolia via CDP facilitator. Third-party services via dev-harness.</div>
+        <div style="margin-top:18px; display:flex; gap:8px; flex-wrap:wrap">
+          <span class="badge yellow" style="color:var(--ink)">BASE SEPOLIA</span><span class="badge cyan">ARBITRUM SEPOLIA</span><span class="badge pink">BASE MAINNET READY</span>
+        </div>
+      </div>
+      <div class="arch-right">
+        <div class="layer-row">
+          <div class="layer-name"><b>EOA</b> WALLET</div>
+          <div class="layer-role"><strong>Signs x402 payments on Base</strong><small>Sepolia testnet / mainnet live — the spender that actually drains</small></div>
+          <div class="layer-chain base">BASE<br/>USDC</div>
+        </div>
+        <div class="layer-row">
+          <div class="layer-name"><b>UA</b> 7702</div>
+          <div class="layer-role"><strong>Particle Universal Account — cross-chain top-up</strong><small>Unified UA balance → EOA at run start via transactionId</small></div>
+          <div class="layer-chain">CROSS<br/>CHAIN</div>
+        </div>
+        <div class="layer-row">
+          <div class="layer-name"><b>MAGIC</b> UI</div>
+          <div class="layer-role"><strong>Email / OTP login; embedded wallet is EIP-7702 owner & signer</strong><small>SSE sign bridge — http://localhost:4020</small></div>
+          <div class="layer-chain magic">OTP<br/>AUTH</div>
+        </div>
+        <div class="layer-row">
+          <div class="layer-name"><b>KEY</b> CLI</div>
+          <div class="layer-role"><strong>PRIVATE_KEY — CLI / E2E signer only</strong><small>Not required to match Magic — isolated for automation</small></div>
+          <div class="layer-chain" style="background:var(--paper)">CLI<br/>ONLY</div>
+        </div>
+        <div class="layer-row">
+          <div class="layer-name"><b>SELLER</b></div>
+          <div class="layer-role"><strong>/synthesize — Arbitrum Sepolia via local facilitator + Gemini</strong><small>gemini-3.1-flash-lite via @google/genai</small></div>
+          <div class="layer-chain arb">ARB<br/>SYNTH</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section class="section" id="how">
+    <div class="section-head reveal">
+      <div>
+        <div class="section-kicker">HOW IT RUNS — 4 TERMINALS</div>
+        <h2 class="section-title">SPIN 3 SERVERS.<br/><span>RUN 1 COMMAND.</span></h2>
+      </div>
+      <p class="section-desc">Testnet is default. Mainnet demo is one env switch after testnet passes.</p>
+    </div>
+    <div class="steps stagger" id="steps">
+      <div class="step">
+        <div class="step-index">01</div><h3>FACILITATOR</h3><p>Arbitrum Sepolia x402 facilitator — seller settlement gas paid by FACILITATOR_PRIVATE_KEY.</p><code>npm run dev-harness:facilitator</code><div class="step-arrow">→</div>
+      </div>
+      <div class="step">
+        <div class="step-index">02</div><h3>DEV-HARNESS</h3><p>Base Sepolia x402 service proxies — Tavily, CoinGecko… real 402 + real upstream.</p><code>npm run dev-harness</code><div class="step-arrow">→</div>
+      </div>
+      <div class="step">
+        <div class="step-index">03</div><h3>SELLER + UI</h3><p>Next.js seller + Magic login UI. SSE bridge signs UA 7702 + x402.</p><code>npm start → :4020</code><div class="step-arrow">→</div>
+      </div>
+      <div class="step">
+        <div class="step-index">04</div><h3>CLI AGENT</h3><p>Fund UA via Circle faucet, then run goal with budget cap.</p><code>npm run cli -- --goal "BTC price brief" --budget 0.15 --network sepolia</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- BUDGET -->
+  <section class="section" id="budget">
+    <div class="section-head reveal">
+      <div>
+        <div class="section-kicker">BUDGET ENFORCEMENT — THREE GATES</div>
+        <h2 class="section-title">FUNDED? CHECKED?<br/><span>THEN PAY.</span></h2>
+      </div>
+      <p class="section-desc">Drag the budget. Watch the gates.</p>
+    </div>
+    <div class="budget-grid">
+      <div class="budget-card reveal">
+        <div class="budget-card-head" style="background:var(--lime)"><span>GATE 1 + 2 + 3</span><span>● LIVE</span></div>
+        <div class="budget-card-body">
+          <div class="code-block"><span class="dim">// 1. fundRunWallet(cap)</span>
+<span class="cyan">await</span> <span class="yellow">fundRunWallet</span>(<span class="pink">cap</span>); <span class="dim">// UA 7702 → EOA</span>
+
+<span class="dim">// 2. preCheck(quote)</span>
+<span class="cyan">if</span> (quote.cost > cap || onChainUSDC < quote.cost) <span class="cyan">throw</span> <span class="pink">"BUDGET_EXCEEDED"</span>;
+
+<span class="dim">// 3. x402 drain</span>
+<span class="cyan">const</span> res = <span class="cyan">await</span> <span class="yellow">fetch</span>(service, {
+  headers: { <span class="pink">"PAYMENT-RESPONSE"</span>: settlement }
+}); <span class="dim">// chain rejects if broke</span></div>
+          <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+            <span class="meta-tag lime">NO FALLBACKS</span><span class="meta-tag yellow">THROW ON FAILURE</span><span class="meta-tag cyan">REAL 402 PROBE</span>
+          </div>
+        </div>
+      </div>
+      <div class="budget-card reveal" style="transition-delay:.08s">
+        <div class="budget-card-head" style="background:var(--cyan)"><span>INTERACTIVE — DRAG BUDGET</span><span id="pctLabel">68% USED</span></div>
+        <div class="budget-card-body" style="display:grid; gap:16px">
+          <div class="budget-visual">
+            <div class="budget-knob" id="knob"><div class="budget-knob-inner"><b id="knobVal">$0.15</b><span>CAP / RUN</span></div></div>
+          </div>
+          <div>
+            <label style="font-family:var(--font-mono); font-size:11px; font-weight:800; text-transform:uppercase; display:flex; justify-content:space-between"><span>Budget cap</span><span id="capVal">0.15 USDC</span></label>
+            <input type="range" min="5" max="50" value="15" id="capSlider" style="width:100%; accent-color:var(--ink); height:36px"/>
+            <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; font-weight:800; text-transform:uppercase"><span>$0.05</span><span>$0.50</span></div>
+          </div>
+          <div style="border:3px solid var(--ink); background:var(--paper); padding:12px; font-family:var(--font-mono); font-size:11px; font-weight:700; line-height:1.5">
+            <div style="display:flex; justify-content:space-between"><span>EST. TAVILY</span><span id="estT">0.01</span></div>
+            <div style="display:flex; justify-content:space-between"><span>EST. COINGECKO</span><span id="estC">0.01</span></div>
+            <div style="display:flex; justify-content:space-between"><span>EST. SYNTHESIZE</span><span id="estS">0.002</span></div>
+            <div style="display:flex; justify-content:space-between; border-top:2px dashed var(--ink); margin-top:6px; padding-top:6px; font-weight:800"><span>TOTAL</span><span id="estTot">0.022</span></div>
+            <div id="budgetMsg" style="margin-top:8px; padding:6px 8px; border:2px solid var(--ink); background:var(--lime); text-align:center">✓ BUDGET OK — WILL SETTLE</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MANIFESTO -->
+  <section class="section" id="manifesto">
+    <div class="manifesto reveal">
+      <div>
+        <h3>NO FALLBACKS.<br/>NO FAKE<br/>PROOF.</h3>
+        <p style="font-family:var(--font-mono); font-size:13px; font-weight:700; margin:12px 0 0; max-width:42ch; line-height:1.6; color:#CCC">If cost estimation fails, we throw. If PAYMENT-RESPONSE is missing, we throw. If Gemini is empty, E2E fails. Prints every explorer link. Fails on missing/fake values.</p>
+      </div>
+      <div>
+        <ul>
+          <li><i>✕</i><span>Cost estimates: live HTTP 402 probe only — throws on failure</span></li>
+          <li><i>✕</i><span>Payments: require PAYMENT-RESPONSE settlement header (v2)</span></li>
+          <li><i>✕</i><span>Synthesis: Gemini only — gemini-3.1-flash-lite via @google/genai</span></li>
+          <li><i>✕</i><span>RPC URLs: required env vars — no public default RPCs</span></li>
+          <li><i>✕</i><span>Keys: missing .env keys throw at runtime — no fallbacks</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section class="final">
+    <div class="final-inner reveal">
+      <div>
+        <h2>READY TO MAKE<br/>YOUR AGENT PAY?</h2>
+        <p>Fund USDC on Base Sepolia + Arbitrum Sepolia via Circle faucet. Top up UA unified balance. Run e2e. Ship mainnet.</p>
+      </div>
+      <div class="final-actions">
+        <a class="btn btn-primary" href="/app" style="justify-content:center">LAUNCH APP →</a>
+        <a class="btn btn-secondary" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener" style="justify-content:center">CLONE & RUN — GITHUB ↗</a>
+        <button class="btn btn-secondary" id="copyFinal" style="justify-content:center">COPY E2E COMMAND</button>
+        <div class="final-note">TESTNET: cp .env.example .env → fill ALL keys → npm install → 3 servers → npm run test:e2e<br/>MAINNET: NETWORK=mainnet + live *_BASE_URL + mainnet RPCs → --budget 0.50</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-left">
+      <div style="font-family:var(--font-display); font-size:22px; line-height:1; text-transform:uppercase; margin-bottom:8px">X402 AGENTIC ORCHESTRATOR — PAY-PER-USE • ON-CHAIN • NO MOCKS</div>
+      Built for the agent economy. Buyer x402 payments: Base Sepolia via CDP facilitator. Seller /synthesize: Arbitrum Sepolia via local facilitator. UI: Magic email/OTP + SSE sign bridge. Budget: UA 7702 → EOA. Synthesis: Gemini only.<br/><br/>© 2026 • Built with hard borders, harder settlement. <span style="background:var(--lime); border:2px solid var(--ink); padding:0 4px">NOT FINANCIAL ADVICE</span>
+    </div>
+    <div class="footer-links">
+      <a class="footer-link" href="https://github.com/Satianurag/x402-agentic-orchestrator">GITHUB</a>
+      <a class="footer-link" href="#arch">ARCHITECTURE</a>
+      <a class="footer-link" href="#how">QUICKSTART</a>
+      <a class="footer-link" href="/app">LAUNCH APP</a>
+      <span class="footer-link" style="background:var(--ink); color:var(--lime)">BASE • ARBITRUM • USDC • 402</span>
+    </div>
+  </div>
+</footer>
+<script src="/landing.js" defer></script></body></html>

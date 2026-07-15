@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run Agent — x402 Orchestrator</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <p class="app-back"><a href="/">← Back to landing</a></p>
+    <h1>x402 Agentic Orchestrator</h1>
+    <p>Pay-per-use AI agent with on-chain USDC budget</p>
+  </header>
+
+  <main>
+    <!-- LOGIN -->
+    <section id="view-login" class="view active">
+      <h2>Sign in</h2>
+      <p class="hint">Magic email login provisions your embedded wallet (7702 signer).</p>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+      </div>
+      <button id="login-btn" type="button">Send login code</button>
+      <p id="login-status" class="login-status" aria-live="polite"></p>
+    </section>
+
+    <!-- HOME -->
+    <section id="view-home" class="view" hidden>
+      <div class="session-bar">
+        <span id="wallet-label">Wallet: —</span>
+        <button id="logout-btn" type="button" class="link-btn">Log out</button>
+      </div>
+
+      <h2>Start a run</h2>
+
+      <fieldset>
+        <legend>Prebuilt agents</legend>
+        <div id="agent-list" class="agent-list" role="list"></div>
+      </fieldset>
+
+      <div class="field">
+        <label for="goal">Custom goal</label>
+        <textarea id="goal" rows="4" placeholder="Describe what the agent should accomplish…"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="budget">Budget (USDC)</label>
+        <input id="budget" type="number" min="0.01" step="0.01" value="0.15" />
+      </div>
+
+      <button id="run-btn" type="button">Run</button>
+    </section>
+
+    <!-- RUNNING -->
+    <section id="view-running" class="view" hidden>
+      <h2>Running</h2>
+      <div class="budget-bar" aria-label="Budget usage">
+        <div id="budget-fill" class="budget-fill"></div>
+      </div>
+      <p id="budget-label" class="budget-label">$0.00 / $0.00 USDC</p>
+      <pre id="run-log" class="run-log" aria-live="polite"></pre>
+      <button id="stop-btn" type="button" class="danger">Stop</button>
+    </section>
+
+    <!-- RESULT -->
+    <section id="view-result" class="view" hidden>
+      <h2>Result</h2>
+      <article id="deliverable" class="deliverable"></article>
+      <table id="spend-table" class="spend-table">
+        <caption>Spend report</caption>
+        <thead>
+          <tr>
+            <th scope="col">Service</th>
+            <th scope="col">Cost (USDC)</th>
+            <th scope="col">Transaction</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            <td id="total-spent" colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <button id="again-btn" type="button">New run</button>
+    </section>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
