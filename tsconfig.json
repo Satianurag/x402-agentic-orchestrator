@@ -16,13 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": true,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@particle-network/universal-account-sdk": [
-        "./node_modules/@particle-network/universal-account-sdk/dist/index.d.ts"
-      ]
-    }
+    "noEmit": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
