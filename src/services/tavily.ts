@@ -1,8 +1,26 @@
-import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
-import { requireServiceBaseUrl } from "../config/chains.js";
+import { paidRequest, probeQuote, type ProbeQuote } from "./x402-client.js";
+import { requireServiceBaseUrl, SERVICE_BASE_URLS } from "../config/chains.js";
 
 function tavilyBase(): string {
-  return requireServiceBaseUrl("TAVILY_BASE_URL");
+  return requireServiceBaseUrl("TAVILY_BASE_URL", SERVICE_BASE_URLS.TAVILY);
+}
+
+async function tavilyProbeRequest(query: string): Promise<ProbeQuote & { endpoint: string }> {
+  const endpoint = `${tavilyBase()}/search`;
+  const quote = await probeQuote(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query }),
+    },
+    `tavily ${endpoint}`,
+  );
+  return { endpoint, ...quote };
+}
+
+export async function tavilyProbeQuote(query: string): Promise<ProbeQuote & { endpoint: string }> {
+  return tavilyProbeRequest(query);
 }
 
 export async function tavilySearch(
@@ -23,15 +41,5 @@ export async function tavilySearch(
 }
 
 export async function tavilyEstimateCost(query: string): Promise<number> {
-  const base = tavilyBase();
-  const endpoint = `${base}/search`;
-  return probeQuoteUsdc(
-    endpoint,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query }),
-    },
-    `tavily ${endpoint}`,
-  );
+  return (await tavilyProbeRequest(query)).usdc;
 }

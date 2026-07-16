@@ -110,7 +110,16 @@ export function createSellerFacilitatorClient(): HTTPFacilitatorClient {
   return new HTTPFacilitatorClient({ url });
 }
 
-export function requireServiceBaseUrl(envKey: string): string {
-  const v = requireEnv(envKey);
+/** Mainnet x402 service roots (used when env override is unset). */
+export const SERVICE_BASE_URLS = {
+  TAVILY: "https://x402.tavily.com",
+  COINGECKO: "https://pro-api.coingecko.com/api/v3",
+  FIRECRAWL: "https://api.firecrawl.dev/v1/x402",
+  BROWSERBASE: "https://x402.browserbase.com",
+  EXA: "https://api.exa.ai",
+} as const;
+
+export function requireServiceBaseUrl(envVar: string, fallbackUrl: string): string {
+  const v = process.env[envVar] ?? fallbackUrl;
   return v.replace(/\/$/, "");
 }

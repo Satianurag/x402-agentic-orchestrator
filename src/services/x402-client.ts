@@ -139,23 +139,53 @@ export async function paidRequest(
   };
 }
 
+export interface ProbeQuote {
+  usdc: number;
+  network: string;
+}
+
 /** Probe live 402 quote — throws if no payment requirements returned. */
-export async function probeQuoteUsdc(url: string, init: RequestInit, endpointLabel: string): Promise<number> {
+export async function probeQuote(
+  url: string,
+  init: RequestInit,
+  endpointLabel = url,
+): Promise<ProbeQuote> {
   const res = await fetch(url, init);
   if (res.status !== 402) {
     throw new Error(`Expected HTTP 402 from ${endpointLabel}, got ${res.status}`);
   }
 
-  const header = paymentHeader(res, "payment-required");
-  if (!header) {
-    throw new Error(`402 response from ${endpointLabel} missing PAYMENT-REQUIRED header`);
+  const getHeader = (name: string) => paymentHeader(res, name);
+  const header = getHeader("payment-required");
+  let required;
+  if (header) {
+    required = decodePaymentRequiredHeader(header);
+  } else {
+    const contentType = res.headers.get("content-type") ?? "";
+    const body = contentType.includes("application/json") ? await res.json() : undefined;
+    const httpClient = new x402HTTPClient(new x402Client());
+    required = httpClient.getPaymentRequiredResponse(getHeader, body);
   }
 
-  const required = decodePaymentRequiredHeader(header);
-  const amount = required.accepts[0]?.amount;
+  const accept = required.accepts[0];
+  const amount =
+    accept?.amount ??
+    (accept as { maxAmountRequired?: string } | undefined)?.maxAmountRequired;
   if (!amount) {
-    throw new Error(`402 response from ${endpointLabel} has no price in accepts[0].amount`);
+    throw new Error(`402 response from ${endpointLabel} has no price in accepts[0]`);
   }
 
-  return atomicToUsdc(amount);
+  return {
+    usdc: atomicToUsdc(amount),
+    network: accept.network ?? "unknown",
+  };
+}
+
+export async function probeQuoteUsdc(
+  url: string,
+  init: RequestInit,
+  endpointLabel?: string,
+): Promise<number> {
+  const quote = await probeQuote(url, init, endpointLabel);
+  return quote.usdc;
 }

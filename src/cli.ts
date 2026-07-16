@@ -5,7 +5,7 @@ import { runAgent } from "./agent/run.js";
 function parseArgs(argv: string[]) {
   let goal = "";
   let budget = 0.5;
-  let network = process.env.NETWORK ?? "sepolia";
+  let network = process.env.NETWORK ?? "mainnet";
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -22,7 +22,7 @@ function parseArgs(argv: string[]) {
 async function main() {
   const { goal, budget, network } = parseArgs(process.argv.slice(2));
   if (!goal) {
-    console.error('Usage: tsx src/cli.ts --goal "..." --budget 0.50 --network sepolia');
+    console.error('Usage: tsx src/cli.ts --goal "..." --budget 0.50 --network mainnet');
     process.exit(1);
   }
 

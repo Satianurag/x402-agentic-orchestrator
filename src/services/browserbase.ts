@@ -1,8 +1,26 @@
-import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
-import { requireServiceBaseUrl } from "../config/chains.js";
+import { paidRequest, probeQuote, type ProbeQuote } from "./x402-client.js";
+import { requireServiceBaseUrl, SERVICE_BASE_URLS } from "../config/chains.js";
 
 function browserbaseBase(): string {
-  return requireServiceBaseUrl("BROWSERBASE_BASE_URL");
+  return requireServiceBaseUrl("BROWSERBASE_BASE_URL", SERVICE_BASE_URLS.BROWSERBASE);
+}
+
+async function browserbaseProbeRequest(): Promise<ProbeQuote & { endpoint: string }> {
+  const endpoint = `${browserbaseBase()}/browser/session/create`;
+  const quote = await probeQuote(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ estimatedMinutes: 1 }),
+    },
+    `browserbase ${endpoint}`,
+  );
+  return { endpoint, ...quote };
+}
+
+export async function browserbaseProbeQuote(): Promise<ProbeQuote & { endpoint: string }> {
+  return browserbaseProbeRequest();
 }
 
 export async function browserbaseCreateSession(
@@ -14,7 +32,7 @@ export async function browserbaseCreateSession(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ estimatedMinutes: 1 }),
     },
     budgetGuard,
     "browserbase",
@@ -22,15 +40,5 @@ export async function browserbaseCreateSession(
 }
 
 export async function browserbaseEstimateCost(): Promise<number> {
-  const base = browserbaseBase();
-  const endpoint = `${base}/browser/session/create`;
-  return probeQuoteUsdc(
-    endpoint,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    },
-    `browserbase ${endpoint}`,
-  );
+  return (await browserbaseProbeRequest()).usdc;
 }

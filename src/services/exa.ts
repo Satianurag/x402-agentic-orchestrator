@@ -1,8 +1,26 @@
-import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
-import { requireServiceBaseUrl } from "../config/chains.js";
+import { paidRequest, probeQuote, type ProbeQuote } from "./x402-client.js";
+import { requireServiceBaseUrl, SERVICE_BASE_URLS } from "../config/chains.js";
 
 function exaBase(): string {
-  return requireServiceBaseUrl("EXA_BASE_URL");
+  return requireServiceBaseUrl("EXA_BASE_URL", SERVICE_BASE_URLS.EXA);
+}
+
+async function exaProbeRequest(query: string): Promise<ProbeQuote & { endpoint: string }> {
+  const endpoint = `${exaBase()}/search`;
+  const quote = await probeQuote(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, numResults: 5 }),
+    },
+    `exa ${endpoint}`,
+  );
+  return { endpoint, ...quote };
+}
+
+export async function exaProbeQuote(query: string): Promise<ProbeQuote & { endpoint: string }> {
+  return exaProbeRequest(query);
 }
 
 export async function exaSearch(
@@ -23,15 +41,5 @@ export async function exaSearch(
 }
 
 export async function exaEstimateCost(query: string): Promise<number> {
-  const base = exaBase();
-  const endpoint = `${base}/search`;
-  return probeQuoteUsdc(
-    endpoint,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query }),
-    },
-    `exa ${endpoint}`,
-  );
+  return (await exaProbeRequest(query)).usdc;
 }
