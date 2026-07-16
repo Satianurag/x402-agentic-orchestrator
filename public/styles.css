@@ -29,6 +29,28 @@ header {
 header h1 { margin: 0 0 0.25rem; font-size: 1.35rem; }
 header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
 
+.hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem; }
+
+.login-status { color: var(--muted); font-size: 0.9rem; min-height: 1.25rem; }
+
+.session-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  color: var(--accent);
+  padding: 0.25rem 0.5rem;
+  font-weight: 500;
+}
+
+.link-btn:hover { background: none; text-decoration: underline; }
+
 main {
   max-width: 52rem;
   margin: 0 auto;

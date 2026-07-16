@@ -13,8 +13,25 @@
   </header>
 
   <main>
+    <!-- LOGIN -->
+    <section id="view-login" class="view active">
+      <h2>Sign in</h2>
+      <p class="hint">Magic email login provisions your embedded wallet (7702 signer).</p>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+      </div>
+      <button id="login-btn" type="button">Send login code</button>
+      <p id="login-status" class="login-status" aria-live="polite"></p>
+    </section>
+
     <!-- HOME -->
-    <section id="view-home" class="view active">
+    <section id="view-home" class="view" hidden>
+      <div class="session-bar">
+        <span id="wallet-label">Wallet: —</span>
+        <button id="logout-btn" type="button" class="link-btn">Log out</button>
+      </div>
+
       <h2>Start a run</h2>
 
       <fieldset>

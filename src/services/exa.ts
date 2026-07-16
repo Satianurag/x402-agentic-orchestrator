@@ -19,10 +19,9 @@ export async function exaSearch(
 }
 
 export async function exaEstimateCost(query: string): Promise<number> {
-  const probed = await probeQuoteUsdc(`${BASE}/search`, {
+  return probeQuoteUsdc(`${BASE}/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ query }),
   });
-  return probed > 0 ? probed : 0.01;
 }

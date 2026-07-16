@@ -18,10 +18,9 @@ export async function browserbaseCreateSession(
 }
 
 export async function browserbaseEstimateCost(): Promise<number> {
-  const probed = await probeQuoteUsdc(`${BASE}/browser/session/create`, {
+  return probeQuoteUsdc(`${BASE}/browser/session/create`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({}),
   });
-  return probed > 0 ? probed : 0.05;
 }

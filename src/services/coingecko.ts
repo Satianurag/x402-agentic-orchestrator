@@ -11,17 +11,9 @@ export async function coingeckoPrice(
     ids: ids.join(","),
     vs_currencies: vsCurrencies.join(","),
   });
-  return paidRequest(
-    `${BASE}/x402/simple/price?${params}`,
-    { method: "GET" },
-    budgetGuard,
-    "coingecko",
-  );
+  return paidRequest(`${BASE}/x402/simple/price?${params}`, { method: "GET" }, budgetGuard, "coingecko");
 }
 
 export async function coingeckoEstimateCost(): Promise<number> {
-  const probed = await probeQuoteUsdc(`${BASE}/x402/simple/price?ids=bitcoin&vs_currencies=usd`, {
-    method: "GET",
-  });
-  return probed > 0 ? probed : 0.001;
+  return probeQuoteUsdc(`${BASE}/x402/simple/price?ids=bitcoin&vs_currencies=usd`, { method: "GET" });
 }
