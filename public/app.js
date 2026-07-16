@@ -1,4 +1,6 @@
 import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
+import { EVMExtension } from "https://cdn.jsdelivr.net/npm/@magic-ext/evm@25.9.0/+esm";
+import { Signature } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
 
 const views = {
   login: document.getElementById("view-login"),
@@ -50,7 +52,7 @@ function updateBudgetBar(spent, cap) {
 async function initMagic() {
   const res = await fetch("/api/config");
   const cfg = await res.json();
-  magic = new Magic(cfg.magicPublishableKey);
+  magic = new Magic(cfg.magicPublishableKey, { extensions: [new EVMExtension()] });
 }
 
 async function restoreSession() {
@@ -135,6 +137,45 @@ function renderResult(result) {
   showView("result");
 }
 
+async function handleSignRequest(request) {
+  if (!magic || !walletAddress) throw new Error("Magic wallet not ready");
+
+  if (request.kind === "message") {
+    const provider = magic.rpcProvider;
+    return provider.request({
+      method: "personal_sign",
+      params: [request.message, walletAddress],
+    });
+  }
+
+  if (request.kind === "authorization") {
+    const auth = request.authorization;
+    const signed = await magic.wallet.sign7702Authorization({
+      contractAddress: auth.address,
+      chainId: auth.chainId,
+      nonce: auth.nonce,
+    });
+    const yParity = signed.v === 27 ? 0 : 1;
+    return Signature.from({ r: signed.r, s: signed.s, yParity }).serialized;
+  }
+
+  if (request.kind === "typed_data") {
+    const td = request.typedData;
+    const provider = magic.rpcProvider;
+    return provider.request({
+      method: "eth_signTypedData_v4",
+      params: [walletAddress, JSON.stringify({
+        domain: td.domain,
+        types: td.types,
+        primaryType: td.primaryType,
+        message: td.message,
+      })],
+    });
+  }
+
+  throw new Error(`Unknown sign request kind: ${request.kind}`);
+}
+
 async function startRun() {
   if (!didToken) {
     alert("Please sign in with Magic first.");
@@ -201,6 +242,17 @@ async function startRun() {
           spent += event.line.usdc;
           updateBudgetBar(spent, budget);
           appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash}`);
+        } else if (event.type === "sign_request") {
+          const signature = await handleSignRequest(event.request);
+          const signRes = await fetch("/run/sign", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: event.request.id, signature }),
+          });
+          if (!signRes.ok) {
+            const err = await signRes.json();
+            throw new Error(err.error ?? `Sign ack failed (${signRes.status})`);
+          }
         } else if (event.type === "error") {
           appendLog(`ERROR: ${event.message}`);
         } else if (event.type === "done") {

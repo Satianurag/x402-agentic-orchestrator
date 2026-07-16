@@ -1,60 +1,91 @@
 # x402 Agentic Orchestrator
 
-Pay-per-use AI agent that completes an end-to-end job by autonomously paying x402 micro-services in USDC, bounded by an on-chain EOA budget on Base.
+Pay-per-use AI agent that completes an end-to-end job by autonomously paying x402 micro-services in USDC, bounded by an on-chain EOA budget.
 
-## Architecture (fixed)
+## Architecture
 
 | Layer | Role |
 |-------|------|
-| **EOA** (`PRIVATE_KEY`) | Signs all x402 payments on Base mainnet; on-chain USDC balance = hard cap |
-| **UA** (Particle 7702) | Cross-chain top-up: unified balance → EOA on Base at run start (guaranteed 7702 tx) |
-| **Magic** | UI email/OTP login; `didToken` verified server-side; must match `PRIVATE_KEY` EOA |
-| **Seller** `/synthesize` | Arbitrum One (mainnet) settlement + OpenAI LLM synthesis |
+| **EOA** | Signs x402 payments on Base (Sepolia testnet / mainnet live) |
+| **UA** (Particle EIP-7702) | Cross-chain top-up: unified UA balance → EOA at run start |
+| **Magic** (UI) | Email/OTP login; embedded wallet is the EIP-7702 owner & signer via SSE sign bridge |
+| **PRIVATE_KEY** (CLI) | CLI/E2E signer only — not required to match Magic |
+| **Seller** `/synthesize` | Arbitrum Sepolia (testnet) or Arbitrum One (mainnet demo) + OpenAI synthesis |
 
-External x402 services (Tavily, CoinGecko, etc.) **always settle on Base mainnet** — requires `NETWORK=mainnet`.
+**Testnet (default `NETWORK=sepolia`):**
+
+- Buyer x402 payments: **Base Sepolia** via CDP facilitator
+- Third-party services: **dev-harness** (real x402 + real upstream APIs, not mocks)
+- `/synthesize`: **Arbitrum Sepolia** via local facilitator (`dev-harness/facilitator.ts`)
+
+**Mainnet demo (`NETWORK=mainnet`):** point service `*_BASE_URL` envs at live x402 endpoints.
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fill ALL keys — no fallbacks; missing keys throw at runtime
+# Fill ALL keys — missing keys throw at runtime (no fallbacks)
 npm install
 npm run typecheck
 ```
 
-### Required `.env`
-
-| Key | Purpose |
-|-----|---------|
-| `NETWORK` | `mainnet` (required for live agent runs) |
-| `PRIVATE_KEY` | EOA that pays x402 — **must match Magic wallet address** |
-| `PARTICLE_*` | Universal Account project |
-| `MAGIC_SECRET_KEY` / `MAGIC_PUBLISHABLE_KEY` | Auth |
-| `CDP_API_KEY_*` | Facilitator (required) |
-| `SELLER_PAY_TO` | Receives Arbitrum USDC on `/synthesize` |
-| `OPENAI_API_KEY` | LLM deliverable synthesis |
-| `BASE_RPC_URL` | Base mainnet RPC |
-
 Fund before running:
-1. **Universal Account** — USDC (cross-chain unified balance) for UA top-up
-2. **EOA on Base** — will receive top-up; chain rejects payments when empty
 
-## Run
+1. **Circle faucet** — USDC on Base Sepolia + Arbitrum Sepolia for your EOA/facilitator
+2. **Universal Account** — USDC unified balance for UA cross-chain top-up
+3. **Facilitator wallet** — `FACILITATOR_PRIVATE_KEY` needs Arbitrum Sepolia ETH for gas
+
+## Testnet run (4 terminals)
 
 ```bash
-npm start          # UI at http://localhost:4020 (Magic login required)
-npm run cli -- --goal "BTC price brief" --budget 0.15 --network mainnet
+# 1 — Arbitrum Sepolia x402 facilitator (seller settlement)
+npm run dev-harness:facilitator
+
+# 2 — Base Sepolia x402 service proxies (Tavily, CoinGecko, …)
+npm run dev-harness
+
+# 3 — Seller + UI
+npm start
+
+# 4 — CLI agent run
+npm run cli -- --goal "BTC price brief" --budget 0.15 --network sepolia
 ```
 
-## Budget enforcement (real)
+UI: http://localhost:4020 (Magic login; signs UA 7702 + x402 via delegated SSE)
 
-1. `fundRunWallet(cap)` — UA cross-chain transfer → EOA on Base (7702 path)
-2. `preCheck(quote)` — in-memory cap + on-chain EOA Base USDC check
+## E2E proof
+
+With all three servers running (facilitator, dev-harness, seller):
+
+```bash
+npm run test:e2e
+```
+
+Asserts:
+
+1. Real Particle UA `transactionId` for cross-chain top-up
+2. ≥1 on-chain tx on **Base Sepolia** (dev-harness x402)
+3. On-chain tx on **Arbitrum Sepolia** for `/synthesize`
+4. Non-empty OpenAI deliverable
+
+Prints every explorer link; fails on missing/fake values.
+
+## Mainnet demo (single step after testnet passes)
+
+```bash
+# .env: NETWORK=mainnet, point *_BASE_URL at live x402 services, mainnet RPCs
+npm run cli -- --goal "BTC price brief" --budget 0.50 --network mainnet
+```
+
+## Budget enforcement
+
+1. `fundRunWallet(cap)` — UA cross-chain transfer → EOA (7702 path when needed)
+2. `preCheck(quote)` — in-memory cap + on-chain Base USDC check
 3. x402 payments drain EOA; insufficient USDC = chain rejection
 
 ## No fallbacks
 
-- Cost estimates: live `402` probe only (throws on failure)
-- Payments: require `PAYMENT-RESPONSE` settlement header
-- Synthesis: OpenAI only (no JSON concat)
-- External services: blocked unless `NETWORK=mainnet`
+- Cost estimates: live HTTP 402 probe only (throws on failure)
+- Payments: require `PAYMENT-RESPONSE` settlement header (v2)
+- Synthesis: OpenAI only (`OPENAI_BASE_URL` + `OPENAI_MODEL` configurable)
+- RPC URLs: required env vars (no public default RPCs)

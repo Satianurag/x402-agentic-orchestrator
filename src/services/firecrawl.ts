@@ -1,13 +1,17 @@
 import { paidRequest, probeQuoteUsdc } from "./x402-client.js";
+import { requireServiceBaseUrl } from "../config/chains.js";
 
-const BASE = "https://api.firecrawl.dev/v1/x402";
+function firecrawlBase(): string {
+  return requireServiceBaseUrl("FIRECRAWL_BASE_URL");
+}
 
 export async function firecrawlSearch(
   query: string,
   budgetGuard: import("../budget/guard.js").BudgetGuard,
 ) {
+  const base = firecrawlBase();
   return paidRequest(
-    `${BASE}/search`,
+    `${base}/search`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -19,9 +23,15 @@ export async function firecrawlSearch(
 }
 
 export async function firecrawlEstimateCost(query: string): Promise<number> {
-  return probeQuoteUsdc(`${BASE}/search`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
+  const base = firecrawlBase();
+  const endpoint = `${base}/search`;
+  return probeQuoteUsdc(
+    endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query }),
+    },
+    `firecrawl ${endpoint}`,
+  );
 }

@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import {
-  createCdpFacilitatorClient,
+  createSellerFacilitatorClient,
   getNetworkMode,
   getSellerCaip2,
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
 import { synthesizeWithLlm } from "../agent/synthesize-llm.js";
 import { runAgent, abortRun, type RunEvent } from "../agent/run.js";
+import { fulfillSignRequest } from "../wallet/sign-bridge.js";
 import { SELLER_PRICE_USDC } from "../services/seller.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +30,7 @@ if (!magicPublishableKey) {
 }
 
 const network = getSellerCaip2();
-const facilitatorClient = createCdpFacilitatorClient();
+const facilitatorClient = createSellerFacilitatorClient();
 const resourceServer = new x402ResourceServer(facilitatorClient).register(
   network,
   new ExactEvmScheme(),
@@ -82,6 +83,20 @@ app.post("/synthesize", async (req, res) => {
 
 app.get("/agents", (_req, res) => {
   res.json(PREBUILT_AGENTS);
+});
+
+app.post("/run/sign", (req, res) => {
+  const { id, signature } = req.body as { id?: string; signature?: string };
+  if (!id || !signature) {
+    res.status(400).json({ error: "id and signature are required" });
+    return;
+  }
+  try {
+    fulfillSignRequest(id, signature);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.post("/run", async (req, res) => {
@@ -153,6 +168,6 @@ app.use(express.static(publicDir));
 app.listen(PORT, () => {
   console.log(`x402 Agentic Orchestrator listening on http://localhost:${PORT}`);
   console.log(`  Seller network: ${getNetworkMode()} (${network})`);
-  console.log(`  Payments: Base mainnet (${getNetworkMode() === "mainnet" ? "live" : "external blocked"})`);
+  console.log(`  Payments: ${getNetworkMode() === "mainnet" ? "Base mainnet" : "Base Sepolia (via service URLs)"}`);
   console.log(`  UI: http://localhost:${PORT}/`);
 });

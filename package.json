@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/server/seller.ts",
     "cli": "tsx src/cli.ts",
-    "dev": "tsx watch src/server/seller.ts"
+    "dev": "tsx watch src/server/seller.ts",
+    "dev-harness": "tsx dev-harness/server.ts",
+    "dev-harness:facilitator": "tsx dev-harness/facilitator.ts",
+    "test:e2e": "tsx scripts/e2e.ts"
   },
   "dependencies": {
     "@coinbase/x402": "2.1.0",

@@ -41,14 +41,16 @@ export class BudgetGuard {
    * Fund run wallet: UA cross-chain top-up → EOA on Base (7702 path), then verify
    * on-chain EOA balance covers the cap. Chain rejects payments when EOA is empty.
    */
-  async fundRunWallet(): Promise<UaTopUpResult> {
+  async fundRunWallet(): Promise<UaTopUpResult | undefined> {
     const ua = getUniversalAccountWallet();
     const current = await getEoaBaseUsdcBalance();
-    const uaAmountUsdc =
-      current < this.capAtomic
-        ? this.capUsdc - atomicToUsdc(current)
-        : 0.01;
 
+    if (current >= this.capAtomic) {
+      this.funded = true;
+      return undefined;
+    }
+
+    const uaAmountUsdc = atomicToUsdc(this.capAtomic - current);
     const result = await ua.crossChainTopUpEoa(uaAmountUsdc.toFixed(6));
     this.uaTopUp = { transactionId: result.transactionId, amountUsdc: uaAmountUsdc };
 

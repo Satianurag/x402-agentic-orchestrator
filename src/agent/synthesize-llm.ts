@@ -4,8 +4,9 @@ export async function synthesizeWithLlm(goal: string, context: unknown[]): Promi
     throw new Error("OPENAI_API_KEY is required for /synthesize LLM deliverable generation");
   }
 
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
   const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,

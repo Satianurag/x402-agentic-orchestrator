@@ -1,26 +1,29 @@
-import { getRunEoaAddress } from "./eoa.js";
 import { verifyMagicDidToken } from "./ua.js";
+import { createCliSigner, createMagicDelegatedSigner, type RunSigner } from "./signer.js";
+import type { Hex } from "viem";
 
 export interface RunSession {
   eoaAddress: `0x${string}`;
+  signer: RunSigner;
   magicVerified: boolean;
 }
 
-/** CLI: PRIVATE_KEY only. UI: Magic DID token must match the same EOA. */
-export async function resolveRunSession(didToken?: string): Promise<RunSession> {
-  const eoaAddress = getRunEoaAddress();
-
-  if (!didToken) {
-    return { eoaAddress, magicVerified: false };
+/** CLI: PRIVATE_KEY signer. UI: Magic embedded wallet is the EIP-7702 owner/signer (no PRIVATE_KEY match). */
+export async function resolveRunSession(didToken?: string, requireMagic = false): Promise<RunSession> {
+  if (requireMagic && !didToken) {
+    throw new Error("Magic login required — provide didToken from the UI");
   }
 
-  const magicAddress = (await verifyMagicDidToken(didToken)) as `0x${string}`;
-  if (magicAddress.toLowerCase() !== eoaAddress.toLowerCase()) {
-    throw new Error(
-      `Magic wallet ${magicAddress} does not match PRIVATE_KEY EOA ${eoaAddress}. ` +
-        "Use the Magic-provisioned key as PRIVATE_KEY on the server.",
-    );
+  if (didToken) {
+    const magicAddress = (await verifyMagicDidToken(didToken)) as `0x${string}`;
+    const signer = createMagicDelegatedSigner(magicAddress);
+    return { eoaAddress: magicAddress, signer, magicVerified: true };
   }
 
-  return { eoaAddress, magicVerified: true };
+  const privateKey = process.env.PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("PRIVATE_KEY required for CLI runs (or provide Magic didToken for UI)");
+  }
+  const signer = createCliSigner(privateKey as Hex);
+  return { eoaAddress: signer.address, signer, magicVerified: false };
 }
