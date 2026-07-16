@@ -73,11 +73,56 @@ export function getUaTopUpChainId(): number {
 }
 
 export function getExplorerTxUrl(txHash: string, network: string): string {
-  if (network === CAIP2.arbitrum) return `https://arbiscan.io/tx/${txHash}`;
-  if (network === CAIP2.arbitrumSepolia) return `https://sepolia.arbiscan.io/tx/${txHash}`;
-  if (network === CAIP2.base) return `https://basescan.org/tx/${txHash}`;
-  if (network === CAIP2.baseSepolia) return `https://sepolia.basescan.org/tx/${txHash}`;
-  throw new Error(`Unknown explorer network: ${network}`);
+  const base = resolveExplorerBaseUrl(network);
+  return `${base}${txHash}`;
+}
+
+const EXPLORER_BASE_BY_CAIP2: Record<string, string> = {
+  [CAIP2.arbitrum]: "https://arbiscan.io/tx/",
+  [CAIP2.arbitrumSepolia]: "https://sepolia.arbiscan.io/tx/",
+  [CAIP2.base]: "https://basescan.org/tx/",
+  [CAIP2.baseSepolia]: "https://sepolia.basescan.org/tx/",
+};
+
+const EXPLORER_ALIASES: Record<string, keyof typeof EXPLORER_BASE_BY_CAIP2> = {
+  arbitrum: CAIP2.arbitrum,
+  "arbitrum-one": CAIP2.arbitrum,
+  "arbitrum one": CAIP2.arbitrum,
+  "arbitrum sepolia": CAIP2.arbitrumSepolia,
+  arb: CAIP2.arbitrum,
+  base: CAIP2.base,
+  "base mainnet": CAIP2.base,
+  "base sepolia": CAIP2.baseSepolia,
+  "42161": CAIP2.arbitrum,
+  "421614": CAIP2.arbitrumSepolia,
+  "8453": CAIP2.base,
+  "84532": CAIP2.baseSepolia,
+};
+
+function resolveExplorerBaseUrl(network: string): string {
+  const trimmed = network.trim();
+  if (!trimmed) {
+    console.warn("[explorer] empty settlement network — using blockscan fallback");
+    return "https://blockscan.com/tx/";
+  }
+
+  if (EXPLORER_BASE_BY_CAIP2[trimmed]) return EXPLORER_BASE_BY_CAIP2[trimmed];
+
+  const lower = trimmed.toLowerCase();
+  if (EXPLORER_BASE_BY_CAIP2[lower]) return EXPLORER_BASE_BY_CAIP2[lower];
+
+  const aliasKey = EXPLORER_ALIASES[lower];
+  if (aliasKey) return EXPLORER_BASE_BY_CAIP2[aliasKey];
+
+  const caipMatch = /^eip155:(\d+)$/i.exec(lower);
+  if (caipMatch) {
+    const chainId = caipMatch[1];
+    const byId = EXPLORER_ALIASES[chainId];
+    if (byId) return EXPLORER_BASE_BY_CAIP2[byId];
+  }
+
+  console.warn(`[explorer] unknown settlement network "${network}" — using blockscan fallback`);
+  return "https://blockscan.com/tx/";
 }
 
 export const USDC_DECIMALS = 6;
@@ -100,7 +145,8 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
 
 /**
  * Facilitator for /synthesize seller settlement.
- * Mainnet: CDP (Arbitrum One). Testnet: local Arbitrum Sepolia facilitator (CDP does not list 421614).
+ * Mainnet: CDP supports eip155:42161 (Arbitrum One) — see CDP x402 network identifiers.
+ * Testnet: local Arbitrum Sepolia facilitator (CDP does not list 421614).
  */
 export function createSellerFacilitatorClient(): HTTPFacilitatorClient {
   if (getNetworkMode() === "mainnet") {

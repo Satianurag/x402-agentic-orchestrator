@@ -8,6 +8,30 @@ const views = {
   result: document.getElementById("view-result"),
 };
 
+function normalizeSignatureComponent(value) {
+  if (value.startsWith("0x")) return value;
+  return `0x${BigInt(value).toString(16).padStart(64, "0")}`;
+}
+
+function resolveAuthorizationYParity(signed) {
+  if (signed.yParity === 0 || signed.yParity === 1) return signed.yParity;
+  if (signed.y_parity === 0 || signed.y_parity === 1) return signed.y_parity;
+  const v = Number(signed.v ?? -1);
+  if (v === 27) return 0;
+  if (v === 28) return 1;
+  if (v === 0 || v === 1) return v;
+  throw new Error(`Unsupported EIP-7702 authorization signature v/yParity: v=${String(signed.v)}`);
+}
+
+function serializeAuthorizationSignature(signed) {
+  const yParity = resolveAuthorizationYParity(signed);
+  return Signature.from({
+    r: normalizeSignatureComponent(signed.r),
+    s: normalizeSignatureComponent(signed.s),
+    yParity,
+  }).serialized;
+}
+
 const emailInput = document.getElementById("email");
 const loginBtn = document.getElementById("login-btn");
 const loginStatus = document.getElementById("login-status");
@@ -166,8 +190,7 @@ async function handleSignRequest(request) {
       chainId: auth.chainId,
       nonce: auth.nonce,
     });
-    const yParity = signed.v === 27 ? 0 : 1;
-    return Signature.from({ r: signed.r, s: signed.s, yParity }).serialized;
+    return serializeAuthorizationSignature(signed);
   }
 
   if (request.kind === "typed_data") {

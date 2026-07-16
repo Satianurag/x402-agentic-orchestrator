@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
+/** GA text model — Gemini API changelog May 2026 / models page. */
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const SYSTEM_INSTRUCTION =
@@ -12,7 +13,12 @@ export async function synthesizeWithLlm(goal: string, context: unknown[]): Promi
     throw new Error("GEMINI_API_KEY is required for /synthesize LLM deliverable generation");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      retryOptions: { attempts: 5 },
+    },
+  });
 
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
@@ -21,11 +27,6 @@ export async function synthesizeWithLlm(goal: string, context: unknown[]): Promi
       systemInstruction: SYSTEM_INSTRUCTION,
       temperature: 0.3,
       maxOutputTokens: 8192,
-      httpOptions: {
-        retryOptions: {
-          attempts: 5,
-        },
-      },
     },
   });
 

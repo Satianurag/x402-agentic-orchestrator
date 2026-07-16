@@ -7,7 +7,7 @@ import "dotenv/config";
 import { createPlan } from "../src/agent/plan.js";
 import { tavilyEstimateCost, tavilyProbeQuote } from "../src/services/tavily.js";
 import { coingeckoEstimateCost, coingeckoProbeQuote } from "../src/services/coingecko.js";
-import { firecrawlEstimateCost, firecrawlProbeQuote } from "../src/services/firecrawl.js";
+import { firecrawlEstimateCost, firecrawlProbeQuote, isFirecrawlEnabled } from "../src/services/firecrawl.js";
 import { browserbaseEstimateCost, browserbaseProbeQuote } from "../src/services/browserbase.js";
 import { exaEstimateCost, exaProbeQuote } from "../src/services/exa.js";
 
@@ -19,7 +19,13 @@ const BUDGET_USDC = Number(process.env.E2E_BUDGET ?? 0.15);
 const PROBE_TARGETS = [
   { service: "tavily", probe: () => tavilyProbeQuote(SAMPLE_GOAL), estimate: () => tavilyEstimateCost(SAMPLE_GOAL) },
   { service: "coingecko", probe: () => coingeckoProbeQuote(), estimate: () => coingeckoEstimateCost() },
-  { service: "firecrawl", probe: () => firecrawlProbeQuote(SAMPLE_GOAL), estimate: () => firecrawlEstimateCost(SAMPLE_GOAL) },
+  ...(isFirecrawlEnabled()
+    ? [{
+        service: "firecrawl" as const,
+        probe: () => firecrawlProbeQuote(SAMPLE_GOAL),
+        estimate: () => firecrawlEstimateCost(SAMPLE_GOAL),
+      }]
+    : []),
   { service: "browserbase", probe: () => browserbaseProbeQuote(), estimate: () => browserbaseEstimateCost() },
   { service: "exa", probe: () => exaProbeQuote(SAMPLE_GOAL), estimate: () => exaEstimateCost(SAMPLE_GOAL) },
 ] as const;
@@ -30,6 +36,9 @@ function pad(value: string, width: number): string {
 
 async function main() {
   console.log("x402 live price probe ($0 — unpaid 402 reads only)\n");
+  if (!isFirecrawlEnabled()) {
+    console.log("firecrawl: skipped (set ENABLE_FIRECRAWL=1 to probe; no documented live x402 endpoint)\n");
+  }
   console.log(
     `${pad("service", 12)} | ${pad("endpoint", 52)} | status | price (USDC) | settlement network`,
   );
