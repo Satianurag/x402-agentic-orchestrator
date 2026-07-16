@@ -4,90 +4,370 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Run Agent — x402 Orchestrator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header>
+  <script>
+    if (location.hostname === "127.0.0.1") {
+      location.replace("http://localhost:" + (location.port || "4020") + location.pathname + location.search + location.hash);
+    }
+  </script>
+  <div class="paper-bg" aria-hidden="true"></div>
+
+  <header class="app-header">
     <p class="app-back"><a href="/">← Back to landing</a></p>
-    <h1>x402 Agentic Orchestrator</h1>
-    <p>Pay-per-use AI agent with on-chain USDC budget</p>
+    <div class="app-header-inner">
+      <div>
+        <p class="app-kicker" id="network-kicker">Live mainnet · Base + Arbitrum One</p>
+        <h1>x402 Agentic Orchestrator</h1>
+        <p class="app-tagline">Autonomous agent that pays real USDC for every tool call — bounded by your on-chain budget.</p>
+      </div>
+      <div class="app-header-badge" aria-hidden="true">
+        <span>402</span>
+        <small>pay per use</small>
+      </div>
+    </div>
+    <nav id="app-nav" class="app-nav" hidden aria-label="Main navigation">
+      <button type="button" class="nav-btn" data-view="dashboard">Dashboard</button>
+      <button type="button" class="nav-btn nav-btn--active" data-view="home">Run</button>
+      <button type="button" class="nav-btn" data-view="history">History</button>
+      <button type="button" class="nav-btn" data-view="analytics">Analytics</button>
+      <button type="button" class="nav-btn" data-view="settings">Settings</button>
+    </nav>
   </header>
 
-  <main>
+  <main class="app-main">
     <!-- LOGIN -->
     <section id="view-login" class="view active">
-      <h2>Sign in</h2>
-      <p class="hint">Magic email login provisions your embedded wallet (7702 signer).</p>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+      <div class="view-card view-card--login">
+        <h2>Sign in to run</h2>
+        <p class="hint">Magic email login provisions your embedded EIP-7702 wallet — the signer for x402 payments and UA cross-chain top-ups.</p>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+        </div>
+        <button id="login-btn" type="button" class="btn btn-primary">Send login code</button>
+        <p id="login-status" class="login-status" aria-live="polite"></p>
       </div>
-      <button id="login-btn" type="button">Send login code</button>
-      <p id="login-status" class="login-status" aria-live="polite"></p>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view" hidden>
+      <div class="session-bar">
+        <span id="dash-wallet-label" class="wallet-chip">Wallet: —</span>
+        <button id="dash-logout-btn" type="button" class="link-btn">Log out</button>
+      </div>
+
+      <div id="dashboard-empty" class="empty-state" hidden>
+        <h2>Welcome — run your first agent</h2>
+        <p>No runs yet. Pick a prebuilt agent or write a custom goal, set a USDC cap, and watch each x402 payment settle on-chain.</p>
+        <button type="button" class="btn btn-primary" data-goto="home">Configure a run →</button>
+      </div>
+
+      <div id="dashboard-content" hidden>
+        <div class="dashboard-grid">
+          <article class="stat-card" id="balance-card">
+            <h3>Wallet balance</h3>
+            <div id="balance-details" class="balance-details">
+              <p class="empty-hint">Loading balances…</p>
+            </div>
+            <button id="refresh-balance-btn" type="button" class="btn btn-secondary btn-sm">Refresh</button>
+          </article>
+          <article class="stat-card">
+            <h3>Cumulative spend</h3>
+            <p id="dash-cumulative" class="stat-value">$0.0000</p>
+            <p class="stat-meta" id="dash-run-count">0 runs</p>
+          </article>
+          <article class="stat-card stat-card--actions">
+            <h3>Quick actions</h3>
+            <div class="quick-actions">
+              <button type="button" class="btn btn-primary btn-sm" data-goto="home">New run</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-goto="history">View history</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="fund-wallet-btn">Add USDC</button>
+            </div>
+          </article>
+        </div>
+
+        <div id="overage-banner" class="banner banner--warn" hidden>
+          <strong>Budget overage detected</strong>
+          <span id="overage-banner-text"></span>
+        </div>
+
+        <div class="view-card">
+          <h2>Recent runs</h2>
+          <div id="recent-runs-list" class="history-list"></div>
+        </div>
+      </div>
     </section>
 
     <!-- HOME -->
     <section id="view-home" class="view" hidden>
       <div class="session-bar">
-        <span id="wallet-label">Wallet: —</span>
+        <span id="wallet-label" class="wallet-chip">Wallet: —</span>
         <button id="logout-btn" type="button" class="link-btn">Log out</button>
       </div>
 
-      <h2>Start a run</h2>
+      <article id="home-balance-strip" class="balance-strip" hidden>
+        <div id="home-balance-summary" class="balance-summary"></div>
+        <button id="home-refresh-balance" type="button" class="link-btn">Refresh</button>
+      </article>
 
-      <fieldset>
-        <legend>Prebuilt agents</legend>
-        <div id="agent-list" class="agent-list" role="list"></div>
-      </fieldset>
-
-      <div class="field">
-        <label for="goal">Custom goal</label>
-        <textarea id="goal" rows="4" placeholder="Describe what the agent should accomplish…"></textarea>
+      <div id="home-empty" class="empty-state empty-state--compact" hidden>
+        <p><strong>Tip:</strong> Start with a prebuilt agent — each step is a real x402 payment on Base mainnet.</p>
       </div>
 
-      <div class="field">
-        <label for="budget">Budget (USDC)</label>
-        <input id="budget" type="number" min="0.01" step="0.01" value="0.15" />
-      </div>
+      <div class="view-card">
+        <h2>Configure your run</h2>
+        <p class="section-lead">Pick a prebuilt agent or write a custom goal. Set a USDC cap — the agent stops when the budget is exhausted.</p>
 
-      <button id="run-btn" type="button">Run</button>
+        <fieldset class="agent-fieldset">
+          <legend>Prebuilt agents</legend>
+          <div id="agent-list" class="agent-list" role="list"></div>
+        </fieldset>
+
+        <fieldset class="agent-fieldset" id="custom-agents-fieldset" hidden>
+          <legend>Your saved agents</legend>
+          <div id="custom-agent-list" class="agent-list" role="list"></div>
+          <button id="save-agent-btn" type="button" class="btn btn-secondary btn-sm">Save current goal as agent</button>
+        </fieldset>
+
+        <div class="field">
+          <label for="goal">Custom goal</label>
+          <textarea id="goal" rows="4" placeholder="Describe what the agent should accomplish…"></textarea>
+        </div>
+
+        <div class="field field--inline">
+          <label for="budget">Budget cap (USDC)</label>
+          <input id="budget" type="number" min="0.01" step="0.01" value="0.15" />
+          <p class="field-note">Buyer payments settle on Base. Seller synthesis settles on Arbitrum One.</p>
+        </div>
+
+        <button id="run-btn" type="button" class="btn btn-primary btn-lg">Run agent →</button>
+      </div>
     </section>
 
     <!-- RUNNING -->
     <section id="view-running" class="view" hidden>
-      <h2>Running</h2>
-      <div class="budget-bar" aria-label="Budget usage">
-        <div id="budget-fill" class="budget-fill"></div>
+      <div class="run-hero">
+        <div>
+          <p class="run-kicker">Live run</p>
+          <h2 id="running-title">Agent is spending real USDC</h2>
+          <p class="run-sub" id="running-subtitle">Each step is a paid x402 call. Watch settlements land on-chain.</p>
+        </div>
+        <button id="stop-btn" type="button" class="btn btn-danger">Stop run</button>
       </div>
-      <p id="budget-label" class="budget-label">$0.00 / $0.00 USDC</p>
-      <pre id="run-log" class="run-log" aria-live="polite"></pre>
-      <button id="stop-btn" type="button" class="danger">Stop</button>
+
+      <div id="run-error-card" class="error-card" hidden>
+        <h3 id="run-error-title">Run failed</h3>
+        <p id="run-error-message"></p>
+        <div class="error-card-actions">
+          <button id="retry-run-btn" type="button" class="btn btn-primary btn-sm">Retry run</button>
+          <button id="error-home-btn" type="button" class="btn btn-secondary btn-sm">Back to home</button>
+        </div>
+      </div>
+
+      <div id="plan-approval-card" class="plan-approval-card" hidden>
+        <h3>Review plan before spending</h3>
+        <p class="plan-approval-lead">No USDC will be spent until you approve this plan. You can adjust the budget cap.</p>
+        <div id="plan-approval-steps" class="plan-approval-steps"></div>
+        <div class="field field--inline">
+          <label for="approval-budget">Approved budget (USDC)</label>
+          <input id="approval-budget" type="number" min="0.01" step="0.01" />
+        </div>
+        <div class="plan-approval-actions">
+          <button id="approve-plan-btn" type="button" class="btn btn-primary">Approve &amp; spend →</button>
+          <button id="reject-plan-btn" type="button" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+
+      <div class="budget-meter" aria-label="Budget usage">
+        <div class="budget-meter-head">
+          <span class="budget-meter-title">Budget meter</span>
+          <p id="budget-label" class="budget-label">$0.0000 / $0.0000 USDC</p>
+        </div>
+        <div class="budget-bar">
+          <div id="budget-fill" class="budget-fill"></div>
+        </div>
+        <p class="budget-meter-foot">Spent vs cap · updates on each payment event</p>
+      </div>
+
+      <div id="ua-topup-card" class="ua-topup-card" hidden>
+        <div class="ua-topup-glow" aria-hidden="true"></div>
+        <div class="ua-topup-inner">
+          <p class="ua-topup-kicker">Signature moment</p>
+          <h3 class="ua-topup-title">EIP-7702 cross-chain top-up</h3>
+          <p class="ua-topup-desc">Particle Universal Account is moving USDC into your run wallet on Base.</p>
+          <div class="ua-topup-meta">
+            <span id="ua-topup-amount" class="ua-topup-amount">—</span>
+            <a id="ua-topup-link" class="tx-chip tx-chip--ua" href="#" target="_blank" rel="noopener">Track on UniversalX ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <div id="run-timeline" class="run-timeline" aria-live="polite" aria-label="Run step timeline"></div>
+
+      <details class="log-details">
+        <summary>Raw event log</summary>
+        <pre id="run-log" class="run-log" aria-live="polite"></pre>
+      </details>
     </section>
 
     <!-- RESULT -->
     <section id="view-result" class="view" hidden>
-      <h2>Result</h2>
-      <article id="deliverable" class="deliverable"></article>
-      <table id="spend-table" class="spend-table">
-        <caption>Spend report</caption>
-        <thead>
-          <tr>
-            <th scope="col">Service</th>
-            <th scope="col">Cost (USDC)</th>
-            <th scope="col">Transaction</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-        <tfoot>
-          <tr>
-            <th scope="row">Total</th>
-            <td id="total-spent" colspan="2"></td>
-          </tr>
-        </tfoot>
-      </table>
-      <button id="again-btn" type="button">New run</button>
+      <div class="result-hero">
+        <p class="run-kicker">Run complete</p>
+        <h2>Deliverable + on-chain spend</h2>
+        <p class="run-sub">Here is what the agent produced and exactly what it cost in USDC.</p>
+      </div>
+
+      <div id="ua-proof-block" class="ua-proof-block" hidden>
+        <div class="ua-proof-glow" aria-hidden="true"></div>
+        <div class="ua-proof-inner">
+          <p class="ua-proof-kicker">On-chain proof</p>
+          <h3 class="ua-proof-title">Cross-chain top-up · Particle UA → EOA</h3>
+          <p class="ua-proof-desc">USDC moved into your run wallet on Base via EIP-7702 before x402 payments began.</p>
+          <div class="ua-proof-meta">
+            <code id="ua-proof-txid" class="ua-proof-txid"></code>
+            <a id="ua-proof-link" class="tx-chip tx-chip--ua" href="#" target="_blank" rel="noopener">Track on UniversalX ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="deliverable-actions">
+        <button id="copy-deliverable-btn" type="button" class="btn btn-secondary btn-sm">Copy</button>
+        <button id="download-md-btn" type="button" class="btn btn-secondary btn-sm">Download MD</button>
+        <button id="download-pdf-btn" type="button" class="btn btn-secondary btn-sm">Download PDF</button>
+        <button id="share-summary-btn" type="button" class="btn btn-secondary btn-sm">Share summary</button>
+      </div>
+
+      <article id="deliverable" class="deliverable" aria-label="Final deliverable"></article>
+
+      <div class="spend-wrap">
+        <table id="spend-table" class="spend-table">
+          <caption>On-chain spend report</caption>
+          <thead>
+            <tr>
+              <th scope="col">Service</th>
+              <th scope="col">Cost (USDC)</th>
+              <th scope="col">Transaction</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot>
+            <tr>
+              <th scope="row">Total</th>
+              <td id="total-spent" colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <button id="again-btn" type="button" class="btn btn-secondary">New run</button>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="view-history" class="view" hidden>
+      <div class="view-card">
+        <h2>Run history</h2>
+        <p class="section-lead">Every completed, failed, or stopped run — with deliverables and on-chain spend.</p>
+        <div id="history-empty" class="empty-state" hidden>
+          <p>No runs saved yet. Complete a run to see it here.</p>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section id="view-analytics" class="view" hidden>
+      <div class="view-card">
+        <h2>Spend &amp; usage</h2>
+        <p class="section-lead">Cumulative spend across all runs, broken down by x402 service.</p>
+        <div id="analytics-empty" class="empty-state" hidden>
+          <p>No spend data yet. Run an agent to populate analytics.</p>
+        </div>
+        <div id="analytics-content" hidden>
+          <div class="analytics-summary">
+            <div class="stat-card stat-card--inline">
+              <span class="stat-label">Total spent</span>
+              <span id="analytics-total" class="stat-value">$0.00</span>
+            </div>
+            <div class="stat-card stat-card--inline">
+              <span class="stat-label">Completed runs</span>
+              <span id="analytics-completed" class="stat-value">0</span>
+            </div>
+          </div>
+          <div id="analytics-chart" class="analytics-chart" aria-label="Spend by service"></div>
+          <div class="ledger-actions">
+            <h3>On-chain proof ledger</h3>
+            <button id="export-csv-btn" type="button" class="btn btn-secondary btn-sm">Export CSV</button>
+          </div>
+          <div id="ledger-table-wrap" class="ledger-table-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view" hidden>
+      <div class="view-card">
+        <h2>Settings</h2>
+
+        <div class="settings-group">
+          <h3>Network</h3>
+          <p id="settings-network" class="settings-value">—</p>
+        </div>
+
+        <div class="settings-group">
+          <label for="settings-default-budget">Default budget cap (USDC)</label>
+          <input id="settings-default-budget" type="number" min="0.01" step="0.01" value="0.15" />
+        </div>
+
+        <div class="settings-group">
+          <label for="settings-theme">Theme</label>
+          <select id="settings-theme">
+            <option value="light">Light (default)</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+
+        <div class="settings-group">
+          <label class="checkbox-label">
+            <input id="settings-notifications" type="checkbox" />
+            Browser notifications on run complete
+          </label>
+        </div>
+
+        <div class="settings-group">
+          <h3>Connected services</h3>
+          <ul id="health-list" class="health-list"></ul>
+        </div>
+
+        <button id="settings-logout-btn" type="button" class="btn btn-danger">Sign out</button>
+      </div>
     </section>
   </main>
+
+  <!-- Fund / top-up modal -->
+  <dialog id="fund-modal" class="fund-modal">
+    <form method="dialog" class="fund-modal-inner">
+      <h2>Add USDC to your wallet</h2>
+      <p class="hint">Send USDC on <strong>Base mainnet</strong> to your Magic EOA address below, or fund your Particle Universal Account for cross-chain top-ups.</p>
+      <div class="fund-address-block">
+        <label>Deposit address (EOA)</label>
+        <code id="fund-address" class="fund-address"></code>
+        <button type="button" id="copy-fund-address" class="btn btn-secondary btn-sm">Copy address</button>
+      </div>
+      <div id="fund-qr" class="fund-qr" aria-label="QR code for deposit address"></div>
+      <ul class="fund-guidance">
+        <li>Base USDC contract: <code>0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></li>
+        <li>Particle UA unified balance covers cross-chain top-ups before x402 payments</li>
+        <li>Verify on <a href="https://basescan.org" target="_blank" rel="noopener">Basescan</a> after sending</li>
+      </ul>
+      <button type="submit" class="btn btn-primary">Done</button>
+    </form>
+  </dialog>
 
   <script src="/app.js" type="module"></script>
 </body>
