@@ -1,121 +1,96 @@
-import { tavilyEstimateCost } from "../services/tavily.js";
-import { coingeckoEstimateCost } from "../services/coingecko.js";
-import { firecrawlEstimateCost, isFirecrawlEnabled } from "../services/firecrawl.js";
-import { browserbaseEstimateCost } from "../services/browserbase.js";
-import { exaEstimateCost } from "../services/exa.js";
 import { synthesizeEstimateCost } from "../services/seller.js";
+import { validateGoal } from "./goal-validation.js";
+import {
+  discoverToolCatalogForPlanning,
+  effectiveUsdc,
+  findCatalogTool,
+  probeSelectedTools,
+  type CatalogTool,
+} from "./tool-catalog.js";
+import { planToolsWithLlm, type PlannerResult, type PlannerWarning } from "./tool-planner.js";
 
-export type ServiceName =
-  | "tavily"
-  | "coingecko"
-  | "firecrawl"
-  | "browserbase"
-  | "exa"
-  | "synthesize";
+export type PlanStepKind = "mcp" | "synthesize";
 
 export interface PlanStep {
-  service: ServiceName;
+  kind: PlanStepKind;
+  /** UI / spend line label */
+  service: string;
+  label: string;
   endpoint: string;
   estCostUsdc: number;
-  params?: Record<string, unknown>;
+  mcpToolName?: string;
+  proxyParameters?: Record<string, unknown>;
+  why?: string;
 }
 
 export interface AgentPlan {
   goal: string;
   steps: PlanStep[];
   totalEstUsdc: number;
+  needs: string[];
+  reasoning: string;
+  thoughts: string;
+  warnings: PlannerWarning[];
+  catalog: CatalogTool[];
 }
 
-function matchesAny(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase();
-  return keywords.some((k) => lower.includes(k));
+export interface CreatePlanOptions {
+  userToolPicks?: string[];
 }
 
-function selectServices(goal: string): ServiceName[] {
-  const services = new Set<ServiceName>();
-
-  if (
-    matchesAny(goal, ["price", "crypto", "bitcoin", "ethereum", "btc", "eth", "sol", "token", "market cap"])
-  ) {
-    services.add("coingecko");
-  }
-  if (
-    isFirecrawlEnabled() &&
-    matchesAny(goal, ["crawl", "scrape", "monitor", "site", "web page"])
-  ) {
-    services.add("firecrawl");
-  }
-  if (matchesAny(goal, ["browse", "browser", "session", "screenshot", "interact"])) {
-    services.add("browserbase");
-  }
-  if (matchesAny(goal, ["semantic", "research paper", "primary source", "investigate", "deep"])) {
-    services.add("exa");
-  }
-
-  services.add("tavily");
-  services.add("synthesize");
-  return [...services];
+function mcpStepFromPick(pick: PlannerResult["selectedTools"][number], catalog: CatalogTool[]): PlanStep {
+  const tool = findCatalogTool(catalog, pick.mcpToolName);
+  const est = tool ? effectiveUsdc(tool) : pick.estimatedUsdc;
+  return {
+    kind: "mcp",
+    service: pick.displayName,
+    label: pick.displayName,
+    endpoint: `MCP proxy_tool_call → ${pick.mcpToolName}`,
+    estCostUsdc: est || pick.estimatedUsdc,
+    mcpToolName: pick.mcpToolName,
+    proxyParameters: pick.proxyParameters,
+    why: pick.why,
+  };
 }
 
-async function estimateStep(
-  service: ServiceName,
-  goal: string,
-): Promise<PlanStep> {
-  switch (service) {
-    case "tavily":
-      return {
-        service,
-        endpoint: "POST https://x402.tavily.com/search",
-        estCostUsdc: await tavilyEstimateCost(goal),
-        params: { query: goal },
-      };
-    case "coingecko":
-      return {
-        service,
-        endpoint: "GET https://pro-api.coingecko.com/api/v3/x402/simple/price",
-        estCostUsdc: await coingeckoEstimateCost(),
-        params: { symbols: ["btc", "eth", "sol"], vs: ["usd"] },
-      };
-    case "firecrawl":
-      return {
-        service,
-        endpoint: "POST https://api.firecrawl.dev/v1/x402/search",
-        estCostUsdc: await firecrawlEstimateCost(goal),
-        params: { query: goal },
-      };
-    case "browserbase":
-      return {
-        service,
-        endpoint: "POST https://x402.browserbase.com/browser/session/create",
-        estCostUsdc: await browserbaseEstimateCost(),
-      };
-    case "exa":
-      return {
-        service,
-        endpoint: "POST https://api.exa.ai/search",
-        estCostUsdc: await exaEstimateCost(goal),
-        params: { query: goal },
-      };
-    case "synthesize":
-      return {
-        service,
-        endpoint: "POST /synthesize (Arbitrum settlement)",
-        estCostUsdc: await synthesizeEstimateCost(),
-      };
-  }
-}
+export async function createPlan(goal: string, options: CreatePlanOptions = {}): Promise<AgentPlan> {
+  const trimmed = goal.trim();
+  validateGoal(trimmed);
 
-export async function createPlan(goal: string): Promise<AgentPlan> {
-  const services = selectServices(goal);
-  const steps: PlanStep[] = [];
+  const catalog = await discoverToolCatalogForPlanning(trimmed, options.userToolPicks);
+  const planner = await planToolsWithLlm(trimmed, catalog, options.userToolPicks);
 
-  for (const service of services) {
-    if (service !== "synthesize") {
-      steps.push(await estimateStep(service, goal));
-    }
-  }
-  steps.push(await estimateStep("synthesize", goal));
+  const selectedNames = new Set(planner.selectedTools.map((t) => t.mcpToolName));
+  const toProbe = catalog.filter((t) => selectedNames.has(t.mcpToolName));
+  const probedCatalog = await probeSelectedTools(toProbe, trimmed);
 
+  const probedMap = new Map(probedCatalog.map((t) => [t.mcpToolName, t]));
+  const mergedCatalog = catalog.map((t) => probedMap.get(t.mcpToolName) ?? t);
+
+  const researchSteps = planner.selectedTools.map((pick) =>
+    mcpStepFromPick(pick, mergedCatalog),
+  );
+
+  const synthesizeCost = await synthesizeEstimateCost();
+  const synthesizeStep: PlanStep = {
+    kind: "synthesize",
+    service: "synthesize",
+    label: "Synthesize deliverable",
+    endpoint: "POST /synthesize (Arbitrum settlement)",
+    estCostUsdc: synthesizeCost,
+  };
+
+  const steps = [...researchSteps, synthesizeStep];
   const totalEstUsdc = steps.reduce((sum, s) => sum + s.estCostUsdc, 0);
-  return { goal, steps, totalEstUsdc };
+
+  return {
+    goal: trimmed,
+    steps,
+    totalEstUsdc,
+    needs: planner.needs,
+    reasoning: planner.reasoning,
+    thoughts: planner.thoughts,
+    warnings: planner.warnings,
+    catalog: mergedCatalog,
+  };
 }

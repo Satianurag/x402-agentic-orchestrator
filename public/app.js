@@ -1,4 +1,5 @@
 import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
+import { OAuthExtension } from "https://cdn.jsdelivr.net/npm/@magic-ext/oauth2@9.21.0/+esm";
 import { Signature } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
 import {
   escapeHtml,
@@ -45,6 +46,7 @@ const views = {
 
 const emailInput = document.getElementById("email");
 const loginBtn = document.getElementById("login-btn");
+const googleLoginBtn = document.getElementById("google-login-btn");
 const loginStatus = document.getElementById("login-status");
 const logoutBtn = document.getElementById("logout-btn");
 const walletLabel = document.getElementById("wallet-label");
@@ -54,6 +56,17 @@ const customAgentsFieldset = document.getElementById("custom-agents-fieldset");
 const saveAgentBtn = document.getElementById("save-agent-btn");
 const goalInput = document.getElementById("goal");
 const budgetInput = document.getElementById("budget");
+const estimateBtn = document.getElementById("estimate-btn");
+const estimateCard = document.getElementById("estimate-card");
+const estimateProbedAt = document.getElementById("estimate-probed-at");
+const estimateReasoning = document.getElementById("estimate-reasoning");
+const estimateWarnings = document.getElementById("estimate-warnings");
+const estimateSteps = document.getElementById("estimate-steps");
+const estimateCatalog = document.getElementById("estimate-catalog");
+const estimateCatalogList = document.getElementById("estimate-catalog-list");
+const userToolPicksInput = document.getElementById("user-tool-picks");
+const estimateTotal = document.getElementById("estimate-total");
+const estimateBudgetWarn = document.getElementById("estimate-budget-warn");
 const runBtn = document.getElementById("run-btn");
 const stopBtn = document.getElementById("stop-btn");
 const againBtn = document.getElementById("again-btn");
@@ -71,20 +84,20 @@ const uaProofBlock = document.getElementById("ua-proof-block");
 const uaProofTxid = document.getElementById("ua-proof-txid");
 const uaProofLink = document.getElementById("ua-proof-link");
 const appNav = document.getElementById("app-nav");
-const networkKicker = document.getElementById("network-kicker");
 const runErrorCard = document.getElementById("run-error-card");
 const runErrorTitle = document.getElementById("run-error-title");
 const runErrorMessage = document.getElementById("run-error-message");
 const retryRunBtn = document.getElementById("retry-run-btn");
 const errorHomeBtn = document.getElementById("error-home-btn");
-const planApprovalCard = document.getElementById("plan-approval-card");
-const planApprovalSteps = document.getElementById("plan-approval-steps");
-const approvalBudgetInput = document.getElementById("approval-budget");
-const approvePlanBtn = document.getElementById("approve-plan-btn");
-const rejectPlanBtn = document.getElementById("reject-plan-btn");
 const runningTitle = document.getElementById("running-title");
 const runningSubtitle = document.getElementById("running-subtitle");
+const resultSummary = document.getElementById("result-summary");
+const receiptTotalInline = document.getElementById("receipt-total-inline");
 const copyDeliverableBtn = document.getElementById("copy-deliverable-btn");
+const followUpPanel = document.getElementById("follow-up-panel");
+const followUpInput = document.getElementById("follow-up-input");
+const followUpBtn = document.getElementById("follow-up-btn");
+const followUpAnswer = document.getElementById("follow-up-answer");
 const downloadMdBtn = document.getElementById("download-md-btn");
 const downloadPdfBtn = document.getElementById("download-pdf-btn");
 const shareSummaryBtn = document.getElementById("share-summary-btn");
@@ -124,12 +137,15 @@ const dashWalletLabel = document.getElementById("dash-wallet-label");
 let magic = null;
 let didToken = null;
 let walletAddress = null;
+let userEmail = null;
 let signingStep = null;
 let currentView = "login";
 let lastResult = null;
-let pendingRunId = null;
 let runAborted = false;
 let appConfig = null;
+let lastEstimate = null;
+let lastEstimateGoal = "";
+let selectedCatalogPicks = new Set();
 
 const stepState = new Map();
 
@@ -183,16 +199,16 @@ function updateBudgetBar(spent, cap, remaining) {
   const pct = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
   budgetFill.style.width = pct + "%";
   const left = remaining !== undefined ? remaining : Math.max(0, cap - spent);
-  budgetLabel.textContent = `$${spent.toFixed(4)} spent · $${left.toFixed(4)} left · $${cap.toFixed(4)} cap`;
+  budgetLabel.textContent = `$${spent.toFixed(2)} spent · $${left.toFixed(2)} remaining`;
 }
 
 function statusLabel(state) {
   switch (state) {
-    case "queued": return "Queued";
-    case "paying": return "Paying…";
-    case "signing": return "Signing…";
-    case "paid": return "Paid ✓";
-    case "settled": return "Settled ✓";
+    case "queued": return "Waiting";
+    case "paying": return "Running…";
+    case "signing": return "Confirming…";
+    case "paid": return "Done";
+    case "settled": return "Complete";
     case "failed": return "Failed";
     case "stopped": return "Stopped";
     default: return state;
@@ -205,16 +221,27 @@ function txChipHtml(url, label, variant) {
   return `<a class="${cls}" href="${url}" target="_blank" rel="noopener">${label}</a>`;
 }
 
-function createStepCard(service) {
-  const meta = SERVICE_META[service] || { label: service, icon: "?", chain: "base", blurb: "x402 service" };
+function stepLabel(step) {
+  return step.label ?? step.service;
+}
+
+function resolveStepMeta(label) {
+  if (SERVICE_META[label]) return SERVICE_META[label];
+  const key = Object.keys(SERVICE_META).find((k) => label.toLowerCase().includes(k));
+  if (key) return SERVICE_META[key];
+  return { label, icon: "⚡", chain: "base", blurb: "Working on this step" };
+}
+
+function createStepCard(label) {
+  const meta = resolveStepMeta(label);
   const card = document.createElement("div");
   card.className = "timeline-step timeline-step--queued";
-  card.dataset.service = service;
+  card.dataset.service = label;
   card.innerHTML = `
     <div class="timeline-icon" aria-hidden="true">${meta.icon}</div>
     <div class="timeline-body">
-      <h4>${meta.label}</h4>
-      <p>${meta.blurb}</p>
+      <h4>${escapeHtml(meta.label)}</h4>
+      <p>${escapeHtml(meta.blurb)}</p>
     </div>
     <div class="timeline-meta">
       <span class="timeline-amount" data-amount></span>
@@ -240,8 +267,7 @@ function setStepState(service, state, paymentLine) {
     const url = explorerUrlForPayment(paymentLine);
     const meta = SERVICE_META[service];
     const variant = meta?.chain === "arbitrum" || networkIsArbitrum(paymentLine.network) ? "arb" : "base";
-    const explorerName = variant === "arb" ? "Arbiscan" : "Basescan";
-    if (txEl && url) txEl.innerHTML = txChipHtml(url, `${explorerName} ↗`, variant);
+    if (txEl && url) txEl.innerHTML = txChipHtml(url, "Receipt ↗", variant);
   }
 }
 
@@ -249,18 +275,20 @@ function buildTimelineFromPlan(plan) {
   runTimeline.innerHTML = "";
   stepState.clear();
   for (const step of plan.steps) {
-    const card = createStepCard(step.service);
+    const key = stepLabel(step);
+    const card = createStepCard(key);
     runTimeline.appendChild(card);
-    stepState.set(step.service, { el: card, state: "queued" });
+    stepState.set(key, { el: card, state: "queued" });
   }
 }
 
 function showUaTopup(event) {
   uaTopupCard.hidden = false;
-  uaTopupAmount.textContent = `+$${Number(event.amountUsdc).toFixed(6)} USDC`;
+  uaTopupAmount.textContent = `+$${Number(event.amountUsdc).toFixed(2)}`;
   const trackUrl = `https://universalx.app/activity/details?id=${encodeURIComponent(event.transactionId)}`;
   uaTopupLink.href = trackUrl;
-  uaTopupLink.textContent = "Track on UniversalX ↗";
+  uaTopupLink.hidden = false;
+  uaTopupLink.textContent = "Details";
 }
 
 function hideRunError() {
@@ -269,16 +297,16 @@ function hideRunError() {
 
 function showRunError(message, { stopped = false } = {}) {
   runErrorCard.hidden = false;
-  runErrorTitle.textContent = stopped ? "Run stopped" : isInsufficientFunds(message) ? "Insufficient funds" : "Run failed";
+  runErrorTitle.textContent = stopped ? "Run stopped" : isInsufficientFunds(message) ? "Add funds to continue" : "Something went wrong";
   runErrorMessage.textContent = message;
   if (isInsufficientFunds(message)) {
-    runErrorMessage.innerHTML = `${escapeHtml(message)}<br><br><button type="button" class="btn btn-secondary btn-sm" id="error-fund-btn">Add USDC →</button>`;
+    runErrorMessage.innerHTML = `${escapeHtml(message)}<br><br><button type="button" class="btn btn-secondary btn-sm" id="error-fund-btn">Add funds</button>`;
     document.getElementById("error-fund-btn")?.addEventListener("click", () => showFundModal(walletAddress));
   }
-  runningTitle.textContent = stopped ? "Run stopped" : "Run ended with error";
+  runningTitle.textContent = stopped ? "Run stopped" : "Run ended";
   runningSubtitle.textContent = stopped
-    ? "You requested a stop. No further payments will be made."
-    : "Review the error below and retry when ready.";
+    ? "No further steps will run."
+    : "Review the message below and try again when ready.";
 }
 
 function resetRunUi(budget) {
@@ -286,49 +314,12 @@ function resetRunUi(budget) {
   runTimeline.innerHTML = "";
   stepState.clear();
   signingStep = null;
-  pendingRunId = null;
   runAborted = false;
   uaTopupCard.hidden = true;
-  planApprovalCard.hidden = true;
   hideRunError();
-  runningTitle.textContent = "Agent is spending real USDC";
-  runningSubtitle.textContent = "Each step is a paid x402 call. Watch settlements land on-chain.";
+  runningTitle.textContent = "Working on your request…";
+  runningSubtitle.textContent = "This usually takes under a minute.";
   updateBudgetBar(0, budget);
-}
-
-function renderPlanApproval(event) {
-  pendingRunId = event.runId;
-  planApprovalCard.hidden = false;
-  approvalBudgetInput.value = String(event.budgetUsdc);
-  planApprovalSteps.innerHTML = event.plan.steps.map((step) => {
-    const meta = SERVICE_META[step.service] || { label: step.service };
-    return `<div class="plan-step-row"><span>${meta.label}</span><span>~$${step.estCostUsdc.toFixed(4)}</span></div>`;
-  }).join("") + `<div class="plan-step-row plan-step-row--total"><span>Estimated total</span><span>$${event.plan.totalEstUsdc.toFixed(4)}</span></div>`;
-  runningTitle.textContent = "Awaiting plan approval";
-  runningSubtitle.textContent = "Review the plan and budget before any USDC is spent.";
-}
-
-async function approvePlan(approved) {
-  if (!pendingRunId) return;
-  const budget = parseFloat(approvalBudgetInput.value);
-  const res = await fetch("/run/resume", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      runId: pendingRunId,
-      approved,
-      budget: approved ? budget : 0,
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Approval failed");
-  }
-  planApprovalCard.hidden = true;
-  if (approved) {
-    runningTitle.textContent = "Agent is spending real USDC";
-    runningSubtitle.textContent = "Each step is a paid x402 call. Watch settlements land on-chain.";
-  }
 }
 
 async function initMagic() {
@@ -338,9 +329,35 @@ async function initMagic() {
   if (!appConfig.magicPublishableKey) throw new Error("Missing Magic publishable key");
   magic = new Magic(appConfig.magicPublishableKey, {
     network: appConfig.magicNetwork ?? "ethereum",
+    extensions: [new OAuthExtension()],
   });
-  const net = appConfig.network === "mainnet" ? "Live mainnet · Base + Arbitrum One" : "Testnet · Base Sepolia + Arbitrum Sepolia";
-  if (networkKicker) networkKicker.textContent = net;
+}
+
+function oauthRedirectUri() {
+  return `${window.location.origin}/app`;
+}
+
+async function handleOAuthRedirect() {
+  if (!magic?.oauth2) return false;
+  try {
+    const result = await magic.oauth2.getRedirectResult();
+    if (result?.magic?.idToken) {
+      didToken = result.magic.idToken;
+      return true;
+    }
+  } catch {
+    // No pending OAuth redirect — normal page load.
+  }
+  return false;
+}
+
+async function loginWithGoogle() {
+  if (!magic) await initMagic();
+  loginStatus.textContent = "Redirecting to Google…";
+  await magic.oauth2.loginWithRedirect({
+    provider: "google",
+    redirectURI: oauthRedirectUri(),
+  });
 }
 
 function resolveWalletAddress(meta) {
@@ -351,8 +368,9 @@ async function loadUserSession() {
   didToken = await magic.user.getIdToken();
   const meta = await magic.user.getInfo();
   walletAddress = resolveWalletAddress(meta);
-  if (!walletAddress) throw new Error("Magic wallet has no Ethereum address");
-  const label = `Wallet: ${shortAddr(walletAddress)}`;
+  if (!walletAddress) throw new Error("Account is missing a wallet address");
+  userEmail = meta.email ?? null;
+  const label = userEmail || `Account · ${shortAddr(walletAddress)}`;
   walletLabel.textContent = label;
   if (dashWalletLabel) dashWalletLabel.textContent = label;
   if (appNav) appNav.hidden = false;
@@ -382,13 +400,13 @@ async function refreshDashboard() {
     if (!hasRuns) return;
 
     dashCumulative.textContent = formatUsdc(analytics.cumulativeSpend);
-    dashRunCount.textContent = `${analytics.totalRuns} run${analytics.totalRuns === 1 ? "" : "s"}`;
+    dashRunCount.textContent = `${analytics.totalRuns} task${analytics.totalRuns === 1 ? "" : "s"}`;
     renderHistoryList(recentRunsList, history.slice(0, 5), { compact: true });
     wireHistoryButtons(recentRunsList);
 
     if (analytics.recentOverBudget > 0) {
       overageBanner.hidden = false;
-      overageBannerText.textContent = `${analytics.recentOverBudget} run(s) exceeded their budget cap.`;
+      overageBannerText.textContent = `${analytics.recentOverBudget} recent task(s) spent more than the run limit.`;
     } else {
       overageBanner.hidden = true;
     }
@@ -457,8 +475,8 @@ async function refreshSettings() {
     const res = await fetch("/api/health");
     const data = await res.json();
     settingsNetwork.textContent = data.network === "mainnet"
-      ? "Mainnet — Base + Arbitrum One"
-      : "Testnet — Base Sepolia + Arbitrum Sepolia";
+      ? "Production"
+      : "Test environment";
     healthList.innerHTML = data.services.map((s) => `
       <li class="health-item health-item--${s.status}">
         <span class="health-name">${escapeHtml(s.name)}</span>
@@ -497,7 +515,7 @@ async function loadAgents() {
     btn.type = "button";
     btn.className = "agent-card";
     btn.setAttribute("role", "listitem");
-    btn.innerHTML = `<strong>${agent.name}</strong><span>${agent.description} · suggested $${agent.suggestedBudget}</span>`;
+    btn.innerHTML = `<strong>${agent.name}</strong><span>${agent.description} · from ~$${agent.suggestedBudget}</span>`;
     btn.addEventListener("click", () => selectAgent(btn, agent.goal, agent.suggestedBudget));
     agentList.appendChild(btn);
   }
@@ -513,7 +531,7 @@ async function loadCustomAgents() {
     btn.type = "button";
     btn.className = "agent-card agent-card--custom";
     btn.setAttribute("role", "listitem");
-    btn.innerHTML = `<strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.description || "Custom agent")} · $${agent.suggestedBudget}</span>`;
+    btn.innerHTML = `<strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.description || "Custom task")} · from ~$${agent.suggestedBudget}</span>`;
     btn.addEventListener("click", () => selectAgent(btn, agent.goal, agent.suggestedBudget));
     customAgentList.appendChild(btn);
   }
@@ -525,6 +543,7 @@ function selectAgent(btn, goal, budget) {
   goalInput.value = goal;
   budgetInput.value = budget;
   homeEmpty.hidden = true;
+  hideEstimate();
 }
 
 function renderUaProof(txId) {
@@ -543,21 +562,70 @@ function renderResult(result) {
   if (result.uaTopUpTxId) renderUaProof(result.uaTopUpTxId);
   else uaProofBlock?.setAttribute("hidden", "");
 
+  const totalStr = `$${result.totalUsdc.toFixed(2)}`;
+  if (resultSummary) {
+    resultSummary.textContent = `${result.spend.length} step${result.spend.length === 1 ? "" : "s"} · ${totalStr} total`;
+  }
+  if (receiptTotalInline) receiptTotalInline.textContent = totalStr;
+
   deliverableEl.innerHTML = renderMarkdown(result.deliverable);
   spendBody.innerHTML = "";
   for (const line of result.spend) {
     const tr = document.createElement("tr");
     const url = explorerUrlForPayment(line);
-    const variant = networkIsArbitrum(line.network) ? "arb" : "base";
-    const explorerName = variant === "arb" ? "Arbiscan" : "Basescan";
     const txCell = url
-      ? `<a class="spend-tx-link spend-tx-link--${variant}" href="${url}" target="_blank" rel="noopener">${explorerName} ↗ ${line.txHash.slice(0, 10)}…${line.txHash.slice(-6)}</a>`
-      : line.txHash || "—";
-    tr.innerHTML = `<td>${line.service}</td><td class="spend-amount">$${line.usdc.toFixed(6)}</td><td>${txCell}</td>`;
+      ? `<a class="spend-tx-link" href="${url}" target="_blank" rel="noopener">Receipt ↗</a>`
+      : "—";
+    tr.innerHTML = `<td>${escapeHtml(line.service)}</td><td class="spend-amount">${formatUsdc(line.usdc)}</td><td>${txCell}</td>`;
     spendBody.appendChild(tr);
   }
-  totalSpent.innerHTML = `<strong class="total-spent-amount">$${result.totalUsdc.toFixed(6)} USDC</strong>`;
+  totalSpent.innerHTML = `<strong class="total-spent-amount">${totalStr}</strong>`;
+  if (followUpAnswer) {
+    followUpAnswer.hidden = true;
+    followUpAnswer.innerHTML = "";
+  }
+  if (followUpInput) followUpInput.value = "";
   showView("result");
+}
+
+async function sendFollowUp() {
+  if (!lastResult?.deliverable) return;
+  const question = followUpInput?.value?.trim();
+  if (!question) {
+    alert("Enter a follow-up question.");
+    return;
+  }
+  followUpBtn.disabled = true;
+  followUpBtn.textContent = "Thinking…";
+  try {
+    const res = await fetch("/api/follow-up", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        question,
+        goal: lastResult.goal ?? lastEstimateGoal ?? goalInput.value.trim(),
+        deliverable: lastResult.deliverable,
+        toolContext: lastResult.toolContext ?? [],
+        spend: lastResult.spend,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? `Follow-up failed (${res.status})`);
+    }
+    const data = await res.json();
+    followUpAnswer.hidden = false;
+    followUpAnswer.innerHTML = renderMarkdown(data.answer);
+    if (data.thoughts) {
+      followUpAnswer.innerHTML +=
+        `<details class="follow-up-thoughts"><summary>Model thinking</summary><pre>${escapeHtml(data.thoughts)}</pre></details>`;
+    }
+  } catch (err) {
+    alert(`Follow-up failed: ${err.message}`);
+  } finally {
+    followUpBtn.disabled = false;
+    followUpBtn.textContent = "Ask follow-up";
+  }
 }
 
 async function handleSignRequest(request) {
@@ -592,23 +660,203 @@ async function handleSignRequest(request) {
   throw new Error(`Unknown sign request kind: ${request.kind}`);
 }
 
+function hideEstimate() {
+  if (estimateCard) estimateCard.hidden = true;
+  if (runBtn) {
+    runBtn.hidden = true;
+    runBtn.disabled = false;
+  }
+  if (estimateBudgetWarn) {
+    estimateBudgetWarn.hidden = true;
+    estimateBudgetWarn.textContent = "";
+  }
+  lastEstimate = null;
+  lastEstimateGoal = "";
+}
+
+function parseUserToolPicks() {
+  const picks = new Set(selectedCatalogPicks);
+  const raw = userToolPicksInput?.value?.trim();
+  if (raw) {
+    for (const s of raw.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean)) {
+      picks.add(s);
+    }
+  }
+  return [...picks];
+}
+
+function renderCatalogPicker(catalog) {
+  if (!estimateCatalog || !estimateCatalogList || !catalog?.length) {
+    if (estimateCatalog) estimateCatalog.hidden = true;
+    return;
+  }
+  estimateCatalog.hidden = false;
+  estimateCatalogList.innerHTML = catalog
+    .slice(0, 16)
+    .map((t) => {
+      const price = t.probeUsdc ?? t.catalogUsdc;
+      const priceStr = price != null ? `$${price.toFixed(4)}` : "?";
+      const checked = selectedCatalogPicks.has(t.displayName) || selectedCatalogPicks.has(t.mcpToolName);
+      return `<li>
+        <label class="catalog-pick">
+          <input type="checkbox" class="catalog-pick-cb" data-name="${escapeHtml(t.displayName)}" data-mcp="${escapeHtml(t.mcpToolName)}" ${checked ? "checked" : ""} />
+          <span class="catalog-pick-name">${escapeHtml(t.displayName)}</span>
+          <span class="catalog-pick-price">${priceStr}</span>
+        </label>
+      </li>`;
+    })
+    .join("");
+
+  estimateCatalogList.querySelectorAll(".catalog-pick-cb").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const name = cb.dataset.name;
+      const mcp = cb.dataset.mcp;
+      if (cb.checked) {
+        if (name) selectedCatalogPicks.add(name);
+        if (mcp) selectedCatalogPicks.add(mcp);
+      } else {
+        if (name) selectedCatalogPicks.delete(name);
+        if (mcp) selectedCatalogPicks.delete(mcp);
+      }
+    });
+  });
+}
+
+function syncRunBudgetFromEstimate(estimate) {
+  budgetInput.value = String(estimate.suggestedBudget);
+  if (!estimateBudgetWarn) return;
+  if (estimate.suggestedBudget < estimate.totalEstUsdc) {
+    estimateBudgetWarn.hidden = false;
+    estimateBudgetWarn.textContent = "Estimated cost exceeds the run limit. Check price again or raise your default limit in Settings.";
+    runBtn.disabled = true;
+  } else {
+    estimateBudgetWarn.hidden = true;
+    estimateBudgetWarn.textContent = "";
+    runBtn.disabled = false;
+  }
+}
+
+function renderEstimate(estimate) {
+  lastEstimate = estimate;
+  lastEstimateGoal = estimate.goal;
+  syncRunBudgetFromEstimate(estimate);
+
+  const stepCount = estimate.plan.steps.length;
+  estimateProbedAt.textContent = `Price checked ${new Date(estimate.probedAt).toLocaleString()} · ${stepCount} step${stepCount === 1 ? "" : "s"}`;
+
+  if (estimateReasoning) {
+    const parts = [];
+    if (estimate.needs?.length) {
+      parts.push(`<p><strong>Needs:</strong> ${estimate.needs.map(escapeHtml).join(", ")}</p>`);
+    }
+    if (estimate.reasoning) {
+      parts.push(`<p><strong>Reasoning:</strong> ${escapeHtml(estimate.reasoning)}</p>`);
+    }
+    if (estimate.thoughts) {
+      parts.push(`<details class="estimate-thoughts-wrap"><summary>How the planner decided</summary><pre class="estimate-thoughts">${escapeHtml(estimate.thoughts)}</pre></details>`);
+    }
+    estimateReasoning.innerHTML = parts.join("");
+    estimateReasoning.hidden = parts.length === 0;
+  }
+
+  if (estimateWarnings) {
+    if (estimate.warnings?.length) {
+      estimateWarnings.innerHTML = estimate.warnings
+        .map(
+          (w) =>
+            `<div class="estimate-warning"><strong>${escapeHtml(w.issue)}</strong><p>${escapeHtml(w.reason)}</p>` +
+            (w.alternatives?.length
+              ? `<p>Alternatives: ${w.alternatives.map(escapeHtml).join(", ")}</p>`
+              : "") +
+            `</div>`,
+        )
+        .join("");
+      estimateWarnings.hidden = false;
+    } else {
+      estimateWarnings.innerHTML = "";
+      estimateWarnings.hidden = true;
+    }
+  }
+
+  estimateSteps.innerHTML =
+    estimate.plan.steps
+      .map((step) => {
+        const label = stepLabel(step);
+        const why = step.why ? `<p class="plan-step-why">${escapeHtml(step.why)}</p>` : "";
+        return `<div class="plan-step-row"><span>${escapeHtml(label)}</span><span>$${step.estCostUsdc.toFixed(4)}</span></div>${why}`;
+      })
+      .join("") +
+    `<div class="plan-step-row plan-step-row--total"><span>Estimated total</span><span>$${estimate.totalEstUsdc.toFixed(4)}</span></div>`;
+
+  renderCatalogPicker(estimate.catalog);
+
+  estimateTotal.innerHTML = `Estimated total: <strong>${formatUsdc(estimate.totalEstUsdc)}</strong> · run limit <strong>${formatUsdc(estimate.suggestedBudget)}</strong>`;
+  estimateCard.hidden = false;
+  runBtn.hidden = false;
+}
+
+async function fetchEstimate() {
+  if (!didToken) {
+    alert("Please sign in first.");
+    showView("login");
+    return;
+  }
+  const goal = goalInput.value.trim();
+  if (!goal) {
+    alert("Please enter a goal or pick a template.");
+    return;
+  }
+
+  estimateBtn.disabled = true;
+  estimateBtn.textContent = "Planning…";
+  hideEstimate();
+
+  const userToolPicks = parseUserToolPicks();
+
+  try {
+    const res = await fetch("/api/estimate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ goal, userToolPicks }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      const hint = err.suggestion ? `\n\n${err.suggestion}` : "";
+      throw new Error((err.error ?? `Estimate failed (${res.status})`) + hint);
+    }
+    const estimate = await res.json();
+    renderEstimate(estimate);
+  } catch (err) {
+    alert(`Estimate failed: ${err.message}`);
+  } finally {
+    estimateBtn.disabled = false;
+    estimateBtn.textContent = "Check price & plan →";
+  }
+}
+
 async function startRun() {
   if (!didToken) {
-    alert("Please sign in with Magic first.");
+    alert("Please sign in first.");
     showView("login");
     return;
   }
 
   const goal = goalInput.value.trim();
-  const budget = parseFloat(budgetInput.value);
   if (!goal) {
-    alert("Please enter a goal or pick a prebuilt agent.");
+    alert("Please enter a goal or pick a template.");
     return;
   }
-  if (!Number.isFinite(budget) || budget <= 0) {
-    alert("Budget must be a positive number.");
+  if (!lastEstimate?.plan) {
+    alert("Check the price and plan before starting a run.");
     return;
   }
+
+  const budget = lastEstimate.suggestedBudget;
+  if (budget < lastEstimate.plan.totalEstUsdc) {
+    alert(`Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`);
+    return;
+  }
+  budgetInput.value = String(budget);
 
   showView("running");
   resetRunUi(budget);
@@ -622,7 +870,14 @@ async function startRun() {
     const res = await fetch("/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ goal, budget, stream: true, didToken }),
+      body: JSON.stringify({
+        goal,
+        budget,
+        stream: true,
+        didToken,
+        userToolPicks: parseUserToolPicks(),
+        approvedPlan: lastEstimate?.plan,
+      }),
     });
 
     if (!res.ok) {
@@ -653,16 +908,13 @@ async function startRun() {
             appendLog(`  ${step.service}: ~$${step.estCostUsdc.toFixed(4)}`);
           }
           appendLog(`  Total est: $${event.plan.totalEstUsdc.toFixed(4)}\n`);
-        } else if (event.type === "plan_approval_required") {
-          renderPlanApproval(event);
-          appendLog("--- AWAITING PLAN APPROVAL ---");
         } else if (event.type === "ua_topup") {
           showUaTopup(event);
           appendLog(`[ua] cross-chain top-up $${event.amountUsdc} id=${event.transactionId}`);
         } else if (event.type === "step_start") {
-          activeStep = event.step.service;
+          activeStep = stepLabel(event.step);
           setStepState(activeStep, "paying");
-          appendLog(`> ${event.step.service}…`);
+          appendLog(`> ${activeStep}…`);
         } else if (event.type === "payment") {
           spent += event.line.usdc;
           updateBudgetBar(spent, runBudget, event.remaining);
@@ -670,8 +922,8 @@ async function startRun() {
           activeStep = null;
           appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash} · $${event.remaining.toFixed(4)} left`);
         } else if (event.type === "step_done") {
-          setStepState(event.step.service, "settled");
-          appendLog(`  ✓ ${event.step.service} settled`);
+          setStepState(stepLabel(event.step), "settled");
+          appendLog(`  ✓ ${stepLabel(event.step)} settled`);
         } else if (event.type === "sign_request") {
           if (activeStep) {
             signingStep = activeStep;
@@ -717,6 +969,17 @@ async function restoreSession() {
   const settings = loadSettings();
   applyTheme(settings.theme ?? "light");
   if (!magic) await initMagic();
+
+  const oauthHandled = await handleOAuthRedirect();
+  if (oauthHandled) {
+    await loadUserSession();
+    loginStatus.textContent = "";
+    showView("dashboard");
+    await loadAgents();
+    wireFundModal(copyFundAddress, walletAddress);
+    return;
+  }
+
   const loggedIn = await magic.user.isLoggedIn();
   if (!loggedIn) {
     showView("login");
@@ -735,7 +998,7 @@ loginBtn.addEventListener("click", async () => {
     return;
   }
   loginBtn.disabled = true;
-  loginStatus.textContent = "Check your email for the OTP code…";
+  loginStatus.textContent = "Check your email for the code…";
   try {
     if (!magic) await initMagic();
     await magic.auth.loginWithEmailOTP({ email, showUI: true });
@@ -745,9 +1008,19 @@ loginBtn.addEventListener("click", async () => {
     await loadAgents();
     wireFundModal(copyFundAddress, walletAddress);
   } catch (err) {
-    loginStatus.textContent = `Login failed: ${err.message}`;
+    loginStatus.textContent = `Sign in failed: ${err.message}`;
   } finally {
     loginBtn.disabled = false;
+  }
+});
+
+googleLoginBtn?.addEventListener("click", async () => {
+  googleLoginBtn.disabled = true;
+  try {
+    await loginWithGoogle();
+  } catch (err) {
+    loginStatus.textContent = `Google sign in failed: ${err.message}`;
+    googleLoginBtn.disabled = false;
   }
 });
 
@@ -763,8 +1036,12 @@ logoutBtn.addEventListener("click", logout);
 dashLogoutBtn?.addEventListener("click", logout);
 settingsLogoutBtn?.addEventListener("click", logout);
 
+estimateBtn?.addEventListener("click", fetchEstimate);
 runBtn.addEventListener("click", startRun);
-retryRunBtn?.addEventListener("click", startRun);
+retryRunBtn?.addEventListener("click", () => {
+  if (goalInput.value.trim() === lastEstimateGoal && lastEstimate) startRun();
+  else fetchEstimate().then(() => { if (lastEstimate) startRun(); });
+});
 errorHomeBtn?.addEventListener("click", () => showView("home"));
 
 stopBtn.addEventListener("click", async () => {
@@ -773,40 +1050,8 @@ stopBtn.addEventListener("click", async () => {
   stopBtn.textContent = "Stopping…";
   await fetch("/run/stop", { method: "POST" });
   appendLog("Stop requested.");
-  if (pendingRunId) {
-    try {
-      await approvePlan(false);
-    } catch {
-    }
-  }
   stopBtn.disabled = false;
-  stopBtn.textContent = "Stop run";
-});
-
-approvePlanBtn?.addEventListener("click", async () => {
-  approvePlanBtn.disabled = true;
-  try {
-    const approvedBudget = parseFloat(approvalBudgetInput.value);
-    if (Number.isFinite(approvedBudget) && approvedBudget > 0) {
-      budgetInput.value = String(approvedBudget);
-    }
-    await approvePlan(true);
-    appendLog("Plan approved — starting spend…");
-  } catch (err) {
-    showRunError(err.message);
-  } finally {
-    approvePlanBtn.disabled = false;
-  }
-});
-
-rejectPlanBtn?.addEventListener("click", async () => {
-  runAborted = true;
-  try {
-    await approvePlan(false);
-    showRunError("Run cancelled — plan not approved", { stopped: true });
-  } catch (err) {
-    showRunError(err.message, { stopped: true });
-  }
+  stopBtn.textContent = "Stop";
 });
 
 againBtn.addEventListener("click", () => showView("home"));
@@ -870,6 +1115,8 @@ exportCsvBtn?.addEventListener("click", () => {
   if (didToken) exportLedgerCsv(didToken);
 });
 
+followUpBtn?.addEventListener("click", sendFollowUp);
+
 copyDeliverableBtn?.addEventListener("click", async () => {
   if (!lastResult?.deliverable) return;
   await navigator.clipboard.writeText(lastResult.deliverable);
@@ -904,9 +1151,9 @@ downloadPdfBtn?.addEventListener("click", async () => {
 
 shareSummaryBtn?.addEventListener("click", async () => {
   if (!lastResult) return;
-  const summary = `x402 Agent Run\nTotal: $${lastResult.totalUsdc.toFixed(4)} USDC\nSteps: ${lastResult.spend.length}\n\n${lastResult.deliverable.slice(0, 500)}…`;
+  const summary = `Research Agent\nTotal: ${formatUsdc(lastResult.totalUsdc)}\n\n${lastResult.deliverable.slice(0, 500)}…`;
   if (navigator.share) {
-    await navigator.share({ title: "x402 deliverable", text: summary });
+    await navigator.share({ title: "Research report", text: summary });
   } else {
     await navigator.clipboard.writeText(summary);
     shareSummaryBtn.textContent = "Copied!";
@@ -916,6 +1163,7 @@ shareSummaryBtn?.addEventListener("click", async () => {
 
 goalInput?.addEventListener("input", () => {
   homeEmpty.hidden = Boolean(goalInput.value.trim());
+  if (goalInput.value.trim() !== lastEstimateGoal) hideEstimate();
 });
 
 const launchBudget = new URLSearchParams(window.location.search).get("budget");

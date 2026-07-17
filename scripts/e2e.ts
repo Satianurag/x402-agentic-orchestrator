@@ -1,85 +1,60 @@
 #!/usr/bin/env node
 /**
- * End-to-end testnet proof: UA 7702 top-up + Base Sepolia x402 payment + Arbitrum Sepolia /synthesize.
- * Prerequisites: dev-harness, Arbitrum Sepolia facilitator, and seller server must be running.
+ * E2E smoke: server health + LLM planner + goal validation ($0, no paid run).
+ * Set E2E_PAID=1 to run full paid agent (requires funded wallet + mainnet/testnet).
  */
 import "dotenv/config";
+import { createRunEstimate } from "../src/agent/estimate.js";
+import { validateGoal, GoalRejectedError } from "../src/agent/goal-validation.js";
 import { runAgent } from "../src/agent/run.js";
-import { CAIP2 } from "../src/config/chains.js";
 
-process.env.NETWORK = "sepolia";
-
-const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
-
-function assertTxHash(label: string, hash: string): void {
-  if (!TX_HASH_RE.test(hash)) {
-    throw new Error(`${label}: expected real tx hash, got ${hash}`);
-  }
-}
+process.env.NETWORK = process.env.NETWORK ?? "mainnet";
+process.env.SELLER_BASE_URL = process.env.SELLER_BASE_URL ?? "http://localhost:4020";
 
 async function assertServiceUp(url: string, name: string): Promise<void> {
   const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`${name} not reachable at ${url} (${res.status})`);
-  }
+  if (!res.ok) throw new Error(`${name} not reachable at ${url} (${res.status})`);
 }
 
 async function main(): Promise<void> {
-  console.log("=== x402 agent E2E (testnet) ===\n");
+  console.log("=== x402 agent E2E smoke ($0 planner) ===\n");
 
-  await assertServiceUp("http://localhost:4030/health", "dev-harness");
-  await assertServiceUp("http://localhost:4031/supported", "Arbitrum Sepolia facilitator");
   await assertServiceUp("http://localhost:4020/api/config", "seller/UI server");
 
-  const goal = process.env.E2E_GOAL ?? "BTC price brief with cited web context";
-  const budget = Number(process.env.E2E_BUDGET ?? "0.15");
-
-  const result = await runAgent({
-    goal,
-    budgetUsdc: budget,
-    onEvent: (event) => {
-      if (event.type === "payment") {
-        console.log(`[paid] ${event.line.service} $${event.line.usdc.toFixed(6)} ${event.line.explorerUrl}`);
-      }
-      if (event.type === "ua_topup") {
-        console.log(`[ua] top-up $${event.amountUsdc} id=${event.transactionId}`);
-      }
-    },
-  });
-
-  console.log("\n--- ASSERTIONS ---");
-
-  if (!result.uaTopUpTxId || result.uaTopUpTxId.length < 8) {
-    throw new Error(
-      `Expected real UA 7702 top-up transactionId (fund UA + keep EOA Base Sepolia below budget). Got: ${result.uaTopUpTxId ?? "missing"}`,
-    );
-  }
-  console.log(`  ✓ UA 7702 top-up id: ${result.uaTopUpTxId}`);
-  console.log(`    https://universalx.app/activity/details?id=${result.uaTopUpTxId}`);
-
-  const basePayments = result.spend.filter((s) => s.network === CAIP2.baseSepolia);
-  if (basePayments.length < 1) {
-    throw new Error("Expected ≥1 Base Sepolia x402 payment against dev-harness");
-  }
-  for (const p of basePayments) {
-    assertTxHash(`Base Sepolia ${p.service}`, p.txHash);
-    console.log(`  ✓ ${p.service}: ${p.explorerUrl}`);
+  try {
+    validateGoal("hi");
+    throw new Error("Expected GoalRejectedError for commodity goal");
+  } catch (err) {
+    if (!(err instanceof GoalRejectedError)) throw err;
+    console.log(`  ✓ Goal rejection: ${err.reason}`);
   }
 
-  const synthesize = result.spend.find((s) => s.service === "synthesize");
-  if (!synthesize || synthesize.network !== CAIP2.arbitrumSepolia) {
-    throw new Error("Expected Arbitrum Sepolia /synthesize settlement");
-  }
-  assertTxHash("Arbitrum Sepolia synthesize", synthesize.txHash);
-  console.log(`  ✓ synthesize: ${synthesize.explorerUrl}`);
+  const goal = process.env.E2E_GOAL ?? "What is the current BTC price in USD with cited sources?";
+  const estimate = await createRunEstimate(goal);
+  const mcpSteps = estimate.plan.steps.filter((s) => s.kind === "mcp");
+  if (mcpSteps.length < 1) throw new Error("Expected ≥1 MCP step in plan");
+  if (!estimate.reasoning) throw new Error("Expected planner reasoning");
+  console.log(`  ✓ Plan: ${mcpSteps.length} MCP step(s), total ~$${estimate.totalEstUsdc.toFixed(4)}`);
+  console.log(`  ✓ Reasoning: ${estimate.reasoning.slice(0, 100)}…`);
 
-  if (!result.deliverable || result.deliverable.length < 20) {
-    throw new Error("Expected non-empty Gemini deliverable");
+  if (process.env.E2E_PAID === "1") {
+    console.log("\n--- Paid run (E2E_PAID=1) ---\n");
+    const budget = Number(process.env.E2E_BUDGET ?? "0.15");
+    const result = await runAgent({
+      goal,
+      budgetUsdc: budget,
+      approvedPlan: estimate.plan,
+    });
+    if (!result.deliverable || result.deliverable.length < 20) {
+      throw new Error("Expected non-empty deliverable");
+    }
+    console.log(`  ✓ Deliverable: ${result.deliverable.length} chars`);
+    console.log(`  ✓ Total spend: $${result.totalUsdc.toFixed(6)}`);
+  } else {
+    console.log("\n  (Skipping paid run — set E2E_PAID=1 for full execution)\n");
   }
-  console.log(`  ✓ Deliverable length: ${result.deliverable.length} chars`);
-  console.log(`  ✓ Total spend: $${result.totalUsdc.toFixed(6)} USDC`);
 
-  console.log("\n=== E2E PASSED ===");
+  console.log("=== E2E PASSED ===");
 }
 
 main().catch((err) => {

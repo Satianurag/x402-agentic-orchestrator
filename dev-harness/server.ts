@@ -2,9 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { HTTPFacilitatorClient } from "@x402/core/server";
 import type { RoutesConfig } from "@x402/core/server";
-import { createFacilitatorConfig } from "@coinbase/x402";
+import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import { CAIP2 } from "../src/config/chains.js";
 
 const PORT = Number(process.env.DEV_HARNESS_PORT ?? 4030);
@@ -19,9 +18,7 @@ function requireEnv(name: string): string {
   return v;
 }
 
-const facilitatorClient = new HTTPFacilitatorClient(
-  createFacilitatorConfig(requireEnv("CDP_API_KEY_ID"), requireEnv("CDP_API_KEY_SECRET")),
-);
+const facilitatorClient = createCdpFacilitatorClient();
 const network = CAIP2.baseSepolia;
 const resourceServer = new x402ResourceServer(facilitatorClient).register(
   network,

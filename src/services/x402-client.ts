@@ -50,7 +50,7 @@ function createPaymentSigner() {
   };
 }
 
-export function createX402Fetch(budgetGuard?: BudgetGuard) {
+export function createX402PaymentClient(budgetGuard?: BudgetGuard) {
   const paymentCaip2 = getPaymentCaip2();
   const sellerCaip2 = getSellerCaip2();
   const evmSigner = createPaymentSigner();
@@ -73,6 +73,12 @@ export function createX402Fetch(budgetGuard?: BudgetGuard) {
       await budgetGuard.preCheck(quoteUsdc);
     });
   }
+
+  return client;
+}
+
+export function createX402Fetch(budgetGuard?: BudgetGuard) {
+  const client = createX402PaymentClient(budgetGuard);
 
   return {
     paidFetch: wrapFetchWithPayment(fetch, client),

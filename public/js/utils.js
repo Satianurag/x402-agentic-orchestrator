@@ -83,12 +83,12 @@ export function isInsufficientFunds(msg) {
 }
 
 export const SERVICE_META = {
-  tavily: { label: "Tavily Search", icon: "T", chain: "base", blurb: "Live web search via x402 on Base" },
-  coingecko: { label: "CoinGecko Prices", icon: "C", chain: "base", blurb: "Crypto market data via x402 on Base" },
-  firecrawl: { label: "Firecrawl", icon: "F", chain: "base", blurb: "Web crawl via x402 on Base" },
-  browserbase: { label: "Browserbase", icon: "B", chain: "base", blurb: "Browser session via x402 on Base" },
-  exa: { label: "Exa Search", icon: "E", chain: "base", blurb: "Semantic search via x402 on Base" },
-  synthesize: { label: "Synthesize Report", icon: "Σ", chain: "arbitrum", blurb: "Gemini deliverable · settles on Arbitrum One" },
+  tavily: { label: "Web search", icon: "🔍", chain: "base", blurb: "Searching the web for sources" },
+  coingecko: { label: "Market data", icon: "📈", chain: "base", blurb: "Fetching live market prices" },
+  firecrawl: { label: "Web crawl", icon: "🌐", chain: "base", blurb: "Reading pages for details" },
+  browserbase: { label: "Browser session", icon: "🖥", chain: "base", blurb: "Running a live browser session" },
+  exa: { label: "Semantic search", icon: "✦", chain: "base", blurb: "Finding relevant documents" },
+  synthesize: { label: "Write report", icon: "📝", chain: "arbitrum", blurb: "Composing your final deliverable" },
 };
 
 export const SETTINGS_KEY = "x402-app-settings";
@@ -123,8 +123,8 @@ export function notifyRunComplete(goal, totalUsdc) {
   const settings = loadSettings();
   if (!settings.notifications) return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  new Notification("x402 run complete", {
-    body: `${goal.slice(0, 80)} — spent $${totalUsdc.toFixed(4)} USDC`,
+  new Notification("Run complete", {
+    body: `${goal.slice(0, 80)} — $${totalUsdc.toFixed(2)} total`,
     icon: "/favicon.ico",
   });
 }

@@ -1,12 +1,9 @@
 import { fundRunWallet, type BudgetGuard } from "../budget/guard.js";
+import { validateGoal } from "./goal-validation.js";
 import { waitForPlanApproval } from "./run-controller.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
-import { tavilySearch } from "../services/tavily.js";
-import { coingeckoPrice } from "../services/coingecko.js";
-import { firecrawlSearch } from "../services/firecrawl.js";
-import { browserbaseCreateSession } from "../services/browserbase.js";
-import { exaSearch } from "../services/exa.js";
 import { synthesizeDeliverable } from "../services/seller.js";
+import { createBazaarMcpSession, mcpProxyToolCall, type BazaarMcpSession } from "./bazaar-mcp.js";
 import { resolveRunSession } from "../wallet/session.js";
 import { runWithContext } from "../wallet/run-context.js";
 import { setSignRequestEmitter } from "../wallet/sign-bridge.js";
@@ -26,6 +23,8 @@ export interface RunResult {
   spend: SpendLine[];
   totalUsdc: number;
   plan: AgentPlan;
+  goal: string;
+  toolContext: unknown[];
   uaTopUpTxId?: string;
 }
 
@@ -47,6 +46,8 @@ export interface RunOptions {
   requireMagic?: boolean;
   requirePlanApproval?: boolean;
   runId?: string;
+  userToolPicks?: string[];
+  approvedPlan?: AgentPlan;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
 }
@@ -62,33 +63,36 @@ async function executeStep(
   goal: string,
   guard: BudgetGuard,
   context: unknown[],
+  mcpSession: BazaarMcpSession | undefined,
 ): Promise<PaymentResult> {
-  switch (step.service) {
-    case "tavily":
-      return tavilySearch((step.params?.query as string) ?? goal, guard);
-    case "coingecko": {
-      const symbols = (step.params?.symbols as string[]) ?? ["btc", "eth"];
-      const vs = (step.params?.vs as string[]) ?? ["usd"];
-      return coingeckoPrice(symbols, vs, guard);
-    }
-    case "firecrawl":
-      return firecrawlSearch((step.params?.query as string) ?? goal, guard);
-    case "browserbase":
-      return browserbaseCreateSession(guard);
-    case "exa":
-      return exaSearch((step.params?.query as string) ?? goal, guard);
-    case "synthesize":
-      return synthesizeDeliverable(goal, context, guard);
+  if (step.kind === "synthesize") {
+    return synthesizeDeliverable(goal, context, guard);
   }
+
+  if (!step.mcpToolName) {
+    throw new Error(`MCP step "${step.label}" is missing mcpToolName`);
+  }
+  if (!mcpSession) {
+    throw new Error("MCP session required for Bazaar tool execution");
+  }
+
+  return mcpProxyToolCall(
+    mcpSession,
+    step.mcpToolName,
+    step.proxyParameters ?? {},
+    step.label,
+  );
 }
 
 async function runAgentInner(options: RunOptions): Promise<RunResult> {
-  const { goal, onEvent, signal, requirePlanApproval = false, runId } = options;
+  const { goal, onEvent, signal, requirePlanApproval = false, runId, userToolPicks, approvedPlan } =
+    options;
   let budgetUsdc = options.budgetUsdc;
   abortController = new AbortController();
   const mergedSignal = signal ?? abortController.signal;
 
-  const plan = await createPlan(goal);
+  validateGoal(goal);
+  const plan = approvedPlan ?? (await createPlan(goal, { userToolPicks }));
   onEvent?.({ type: "plan", plan });
 
   if (plan.totalEstUsdc > budgetUsdc) {
@@ -118,34 +122,40 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
   const spend: SpendLine[] = [];
   const context: unknown[] = [];
   let deliverable = "";
+  const hasMcpSteps = plan.steps.some((s) => s.kind === "mcp");
+  const mcpSession = hasMcpSteps ? await createBazaarMcpSession(guard) : undefined;
 
-  for (let i = 0; i < plan.steps.length; i++) {
-    if (mergedSignal.aborted) throw new Error("Run aborted");
+  try {
+    for (let i = 0; i < plan.steps.length; i++) {
+      if (mergedSignal.aborted) throw new Error("Run aborted");
 
-    const step = plan.steps[i];
-    onEvent?.({ type: "step_start", step, index: i });
+      const step = plan.steps[i];
+      onEvent?.({ type: "step_start", step, index: i });
 
-    const result = await executeStep(step, goal, guard, context);
-    context.push({ service: step.service, data: result.data });
+      const result = await executeStep(step, goal, guard, context, mcpSession);
+      context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
 
-    const line: SpendLine = {
-      service: step.service,
-      usdc: result.usdc,
-      txHash: result.txHash,
-      explorerUrl: result.explorerUrl,
-      network: result.network,
-    };
-    spend.push(line);
-    onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
-    onEvent?.({ type: "step_done", step, index: i });
+      const line: SpendLine = {
+        service: step.label,
+        usdc: result.usdc,
+        txHash: result.txHash,
+        explorerUrl: result.explorerUrl,
+        network: result.network,
+      };
+      spend.push(line);
+      onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
+      onEvent?.({ type: "step_done", step, index: i });
 
-    if (step.service === "synthesize") {
-      const payload = result.data as { deliverable?: string };
-      if (!payload.deliverable) {
-        throw new Error("Synthesize step returned no deliverable");
+      if (step.kind === "synthesize") {
+        const payload = result.data as { deliverable?: string };
+        if (!payload.deliverable) {
+          throw new Error("Synthesize step returned no deliverable");
+        }
+        deliverable = payload.deliverable;
       }
-      deliverable = payload.deliverable;
     }
+  } finally {
+    await mcpSession?.close();
   }
 
   const totalUsdc = spend.reduce((s, l) => s + l.usdc, 0);
@@ -154,6 +164,8 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
     spend,
     totalUsdc,
     plan,
+    goal,
+    toolContext: context,
     uaTopUpTxId: uaTopUp?.transactionId,
   };
   onEvent?.({ type: "done", result: runResult });

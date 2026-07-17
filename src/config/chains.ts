@@ -1,6 +1,6 @@
 import { arbitrum, arbitrumSepolia, base, baseSepolia } from "viem/chains";
 import { HTTPFacilitatorClient } from "@x402/core/server";
-import { createFacilitatorConfig } from "@coinbase/x402";
+import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 
 /** Circle official USDC — https://developers.circle.com/stablecoins/usdc-contract-addresses */
 export const USDC_ADDRESSES = {
@@ -137,10 +137,8 @@ export function atomicToUsdc(amount: bigint | string | number): number {
 }
 
 /** CDP facilitator for Base Sepolia / Base mainnet buyer payments. */
-export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
-  const keyId = requireEnv("CDP_API_KEY_ID");
-  const keySecret = requireEnv("CDP_API_KEY_SECRET");
-  return new HTTPFacilitatorClient(createFacilitatorConfig(keyId, keySecret));
+export function getCdpFacilitatorClient(): HTTPFacilitatorClient {
+  return createCdpFacilitatorClient() as unknown as HTTPFacilitatorClient;
 }
 
 /**
@@ -150,7 +148,7 @@ export function createCdpFacilitatorClient(): HTTPFacilitatorClient {
  */
 export function createSellerFacilitatorClient(): HTTPFacilitatorClient {
   if (getNetworkMode() === "mainnet") {
-    return createCdpFacilitatorClient();
+    return getCdpFacilitatorClient();
   }
   const url = requireEnv("ARBITRUM_SEPOLIA_FACILITATOR_URL");
   return new HTTPFacilitatorClient({ url });

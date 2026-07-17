@@ -16,6 +16,9 @@ import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
 import { synthesizeWithLlm } from "../agent/synthesize-llm.js";
 import { runAgent, abortRun, type RunEvent, type RunResult } from "../agent/run.js";
 import { resolvePlanApproval, hasPendingApproval } from "../agent/run-controller.js";
+import { createRunEstimate, GoalRejectedError } from "../agent/estimate.js";
+import { answerFollowUp } from "../agent/follow-up-chat.js";
+import type { AgentPlan } from "../agent/plan.js";
 import { fulfillSignRequest } from "../wallet/sign-bridge.js";
 import { SELLER_PRICE_USDC } from "../services/seller.js";
 import { verifyMagicDidToken } from "../wallet/ua.js";
@@ -140,6 +143,58 @@ app.get("/agents", (_req, res) => {
 
 app.get("/api/health", (_req, res) => {
   res.json({ services: getServicesHealth(), network: getNetworkMode() });
+});
+
+app.post("/api/estimate", async (req, res) => {
+  try {
+    const { goal, userToolPicks } = req.body as { goal?: string; userToolPicks?: string[] };
+    if (!goal || typeof goal !== "string") {
+      res.status(400).json({ error: "goal is required" });
+      return;
+    }
+    const picks = Array.isArray(userToolPicks)
+      ? userToolPicks.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+      : undefined;
+    const estimate = await createRunEstimate(goal, { userToolPicks: picks });
+    res.json(estimate);
+  } catch (err) {
+    if (err instanceof GoalRejectedError) {
+      res.status(400).json({
+        error: err.message,
+        reason: err.reason,
+        suggestion: err.suggestion,
+      });
+      return;
+    }
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/follow-up", async (req, res) => {
+  try {
+    const { question, goal, deliverable, toolContext, spend } = req.body as {
+      question?: string;
+      goal?: string;
+      deliverable?: string;
+      toolContext?: unknown[];
+      spend?: Array<{ service: string; usdc: number }>;
+    };
+    if (!question?.trim() || !goal?.trim() || !deliverable?.trim()) {
+      res.status(400).json({ error: "question, goal, and deliverable are required" });
+      return;
+    }
+    const spendSummary = spend?.map((s) => `${s.service}: $${s.usdc.toFixed(6)}`).join("\n");
+    const result = await answerFollowUp({
+      question: question.trim(),
+      goal: goal.trim(),
+      deliverable: deliverable.trim(),
+      toolContext,
+      spendSummary,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.post("/api/balance", async (req, res) => {
@@ -335,11 +390,13 @@ app.post("/run/resume", (req, res) => {
 });
 
 app.post("/run", async (req, res) => {
-  const { goal, budget, stream, didToken } = req.body as {
+  const { goal, budget, stream, didToken, userToolPicks, approvedPlan } = req.body as {
     goal?: string;
     budget?: number;
     stream?: boolean;
     didToken?: string;
+    userToolPicks?: string[];
+    approvedPlan?: AgentPlan;
   };
 
   if (!goal || typeof goal !== "string") {
@@ -364,13 +421,19 @@ app.post("/run", async (req, res) => {
   } catch {
   }
 
+  const picks = Array.isArray(userToolPicks)
+    ? userToolPicks.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    : undefined;
+
   const runOpts = {
     goal,
     budgetUsdc,
     didToken,
     requireMagic: true,
-    requirePlanApproval: true,
+    requirePlanApproval: false,
     runId,
+    userToolPicks: picks,
+    approvedPlan,
   };
 
   if (stream) {
