@@ -34,8 +34,12 @@ export async function verifyMagicDidToken(didToken: string): Promise<string> {
   const admin = await getMagicAdmin();
   admin.token.validate(didToken);
   const meta = await admin.users.getMetadataByToken(didToken);
-  if (!meta.publicAddress) throw new Error("Magic user has no public address");
-  return meta.publicAddress;
+  const address =
+    meta.publicAddress ??
+    meta.wallets?.find((w) => w.network === "ethereum")?.publicAddress ??
+    meta.wallets?.[0]?.publicAddress;
+  if (!address) throw new Error("Magic user has no public address");
+  return address;
 }
 
 export class UniversalAccountWallet {

@@ -6,7 +6,9 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import {
   createSellerFacilitatorClient,
+  getBaseRpcUrl,
   getNetworkMode,
+  getPaymentChain,
   getSellerCaip2,
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
@@ -60,10 +62,15 @@ app.use(
 );
 
 app.get("/api/config", (_req, res) => {
+  const paymentChain = getPaymentChain();
   res.json({
     magicPublishableKey,
     network: getNetworkMode(),
     sellerNetwork: network,
+    magicNetwork: {
+      rpcUrl: getBaseRpcUrl(),
+      chainId: paymentChain.id,
+    },
   });
 });
 
@@ -163,6 +170,10 @@ app.post("/run/stop", (_req, res) => {
   res.json({ stopped: true });
 });
 
+app.get("/app", (_req, res) => {
+  res.sendFile(path.join(publicDir, "app.html"));
+});
+
 app.use(express.static(publicDir));
 
 app.listen(PORT, () => {
@@ -170,4 +181,5 @@ app.listen(PORT, () => {
   console.log(`  Seller network: ${getNetworkMode()} (${network})`);
   console.log(`  Payments: ${getNetworkMode() === "mainnet" ? "Base mainnet" : "Base Sepolia (via service URLs)"}`);
   console.log(`  UI: http://localhost:${PORT}/`);
+  console.log(`  App: http://localhost:${PORT}/app`);
 });

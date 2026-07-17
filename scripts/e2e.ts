@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   console.log(`  ✓ synthesize: ${synthesize.explorerUrl}`);
 
   if (!result.deliverable || result.deliverable.length < 20) {
-    throw new Error("Expected non-empty LLM deliverable");
+    throw new Error("Expected non-empty Gemini deliverable");
   }
   console.log(`  ✓ Deliverable length: ${result.deliverable.length} chars`);
   console.log(`  ✓ Total spend: $${result.totalUsdc.toFixed(6)} USDC`);
