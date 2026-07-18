@@ -1,0 +1,51 @@
+# Official Render Blueprint — https://render.com/docs/blueprint-spec
+# Web service: Node Express x402 agent (binds 0.0.0.0, PORT from Render)
+
+services:
+  - type: web
+    runtime: node
+    name: uxmaxx
+    repo: https://github.com/Satianurag/x402-agentic-orchestrator
+    branch: main
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: NODE_ENV
+        value: production
+      - key: NETWORK
+        value: mainnet
+      # Secrets — set in Render Dashboard / API (never commit). Docs: sync: false
+      - key: MAGIC_SECRET_KEY
+        sync: false
+      - key: MAGIC_PUBLISHABLE_KEY
+        sync: false
+      - key: PARTICLE_PROJECT_ID
+        sync: false
+      - key: PARTICLE_CLIENT_KEY
+        sync: false
+      - key: PARTICLE_APP_ID
+        sync: false
+      - key: CDP_API_KEY_ID
+        sync: false
+      - key: CDP_API_KEY_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PRIVATE_KEY
+        sync: false
+      - key: SELLER_PAY_TO
+        sync: false
+      - key: BASE_RPC_URL
+        sync: false
+      - key: ARBITRUM_MAINNET_RPC_URL
+        sync: false
+      - key: SELLER_BASE_URL
+        sync: false

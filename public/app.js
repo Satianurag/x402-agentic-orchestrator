@@ -394,8 +394,6 @@ async function loadUserSession() {
   walletLabel.textContent = label;
   if (dashWalletLabel) dashWalletLabel.textContent = label;
   if (appNav) appNav.hidden = false;
-  const tagline = document.getElementById("app-tagline");
-  if (tagline) tagline.hidden = true;
   const back = document.getElementById("app-back-link");
   if (back) back.hidden = true;
 }
@@ -1112,11 +1110,6 @@ async function logout() {
   walletAddress = null;
   lastBalances = null;
   if (appNav) appNav.hidden = true;
-  const tagline = document.getElementById("app-tagline");
-  if (tagline) {
-    tagline.hidden = false;
-    tagline.textContent = "Sign in to plan a task, see the price, then run it.";
-  }
   const back = document.getElementById("app-back-link");
   if (back) back.hidden = false;
   showView("login");
