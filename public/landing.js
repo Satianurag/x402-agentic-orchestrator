@@ -1,3 +1,5 @@
+import { initLandingAuth } from "./landing-auth.js";
+
 const ham = document.getElementById("ham");
 const navLinks = document.getElementById("navLinks");
 ham?.addEventListener("click", () => navLinks.classList.toggle("open"));
@@ -15,14 +17,6 @@ const io = new IntersectionObserver(
   { threshold: 0.12 },
 );
 reveals.forEach((el) => io.observe(el));
-
-function launchApp() {
-  const slider = document.getElementById("capSlider");
-  const cap = slider ? (parseInt(slider.value, 10) / 100).toFixed(2) : "0.15";
-  window.location.href = `/app?budget=${cap}`;
-}
-
-document.getElementById("runBtn")?.addEventListener("click", launchApp);
 
 const slider = document.getElementById("capSlider");
 const knob = document.getElementById("knob");
@@ -104,3 +98,5 @@ fetch("/api/config")
     }
   })
   .catch(() => {});
+
+initLandingAuth();

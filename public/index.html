@@ -36,11 +36,11 @@
         <a class="nav-link" href="#arch">Architecture</a>
         <a class="nav-link" href="#how">How it Works</a>
         <a class="nav-link" href="#budget">Budget</a>
-        <a class="nav-link" href="/app">Launch App</a>
+        <a class="nav-link" href="#" data-launch>Launch App</a>
       </div>
     </div>
     <div class="nav-actions">
-      <a class="nav-cta" href="/app">LAUNCH APP →</a>
+      <a class="nav-cta" href="#" data-launch>LAUNCH APP →</a>
       <a class="nav-cta nav-cta--ghost" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener">GITHUB ↗</a>
       <button class="hamburger" id="ham" aria-label="Menu">≡</button>
     </div>
@@ -51,7 +51,7 @@
   <section class="hero">
     <div class="reveal">
       <div class="badge-row">
-        <span class="badge lime" id="networkBadge">LIVE · EMAIL LOGIN</span>
+        <span class="badge lime" id="networkBadge">LIVE · MAINNET</span>
         <span class="badge cyan">PAY AS YOU GO</span>
         <span class="badge pink">FINISHED REPORT</span>
       </div>
@@ -65,10 +65,10 @@
         <strong>no seed phrase, no wallet extension</strong>. Crypto rails stay under the hood.
       </p>
       <div class="hero-actions">
-        <button class="btn btn-primary" id="runBtn" type="button">OPEN APP <span class="arrow">→</span></button>
+        <button class="btn btn-primary" id="runBtn" type="button" data-launch>OPEN APP <span class="arrow">→</span></button>
         <a class="btn btn-secondary" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener">VIEW SOURCE ↗</a>
       </div>
-      <p class="hero-note">Sign in with email or Google · pick a task · watch it finish.</p>
+      <p class="hero-note">Pick a task · see the price · watch it finish.</p>
     </div>
 
     <div class="hero-visual reveal" style="transition-delay:.12s">
@@ -209,13 +209,13 @@
         <div class="section-kicker">HOW IT WORKS</div>
         <h2 class="section-title">FOUR STEPS.<br/><span>REAL MONEY.</span></h2>
       </div>
-      <p class="section-desc">Launch the app, sign in, and watch the agent spend USDC in real time.</p>
+      <p class="section-desc">Launch the app and watch the agent spend USDC in real time.</p>
     </div>
     <div class="steps stagger" id="steps">
       <div class="step">
         <div class="step-index">01</div>
-        <h3>SIGN IN</h3>
-        <p>Magic email OTP provisions your embedded EIP-7702 wallet — the signer for payments and UA top-ups.</p>
+        <h3>OPEN APP</h3>
+        <p>One click from the landing page — your embedded wallet is ready when you need it.</p>
         <div class="step-arrow">→</div>
       </div>
       <div class="step">
@@ -305,7 +305,7 @@
         <p>Fund your Universal Account with USDC. Launch the app. Watch real settlements on Basescan and Arbiscan.</p>
       </div>
       <div class="final-actions">
-        <a class="btn btn-primary" href="/app" style="justify-content:center">LAUNCH APP →</a>
+        <a class="btn btn-primary" href="#" data-launch style="justify-content:center">LAUNCH APP →</a>
         <a class="btn btn-secondary" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener" style="justify-content:center">VIEW ON GITHUB ↗</a>
       </div>
     </div>
@@ -322,11 +322,28 @@
     <div class="footer-links">
       <a class="footer-link" href="https://github.com/Satianurag/x402-agentic-orchestrator" target="_blank" rel="noopener">GITHUB</a>
       <a class="footer-link" href="#arch">ARCHITECTURE</a>
-      <a class="footer-link" href="/app">LAUNCH APP</a>
+      <a class="footer-link" href="#" data-launch>LAUNCH APP</a>
       <span class="footer-link footer-link--accent">BASE · ARBITRUM · USDC</span>
     </div>
   </div>
 </footer>
-<script src="/landing.js" defer></script>
+
+<dialog id="login-modal" class="login-modal">
+  <div class="login-modal-inner">
+    <button type="button" class="login-modal-close" id="login-modal-close" aria-label="Close">×</button>
+    <h2>Welcome</h2>
+    <p class="login-hint">Email or Google — no seed phrase, no browser extension.</p>
+    <button id="google-login-btn" type="button" class="btn btn-google">Continue with Google</button>
+    <div class="login-divider" aria-hidden="true"><span>or</span></div>
+    <div class="login-field">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+    </div>
+    <button id="login-btn" type="button" class="btn btn-primary login-submit">Continue with email</button>
+    <p id="login-status" class="login-status" aria-live="polite"></p>
+  </div>
+</dialog>
+
+<script type="module" src="/landing.js"></script>
 </body>
 </html>

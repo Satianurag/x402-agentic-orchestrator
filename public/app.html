@@ -29,25 +29,9 @@
   </header>
 
   <main class="app-main">
-    <!-- LOGIN -->
-    <section id="view-login" class="view active">
-      <div class="view-card view-card--login">
-        <h2>Sign in to continue</h2>
-        <p class="hint">Use your email or Google account. No seed phrase, no browser extension.</p>
-        <button id="google-login-btn" type="button" class="btn btn-google">Continue with Google</button>
-        <div class="login-divider" aria-hidden="true"><span>or</span></div>
-        <div class="field">
-          <label for="email">Email</label>
-          <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
-        </div>
-        <button id="login-btn" type="button" class="btn btn-primary">Continue with email</button>
-        <p id="login-status" class="login-status" aria-live="polite"></p>
-      </div>
-    </section>
-
     <!-- DASHBOARD -->
     <section id="view-dashboard" class="view" hidden>
-      <div class="session-bar">
+      <div class="session-bar" hidden>
         <span id="dash-wallet-label" class="account-chip">Account</span>
         <button id="dash-logout-btn" type="button" class="link-btn">Log out</button>
       </div>
@@ -100,7 +84,7 @@
 
     <!-- HOME -->
     <section id="view-home" class="view" hidden>
-      <div class="session-bar">
+      <div class="session-bar" hidden>
         <span id="wallet-label" class="account-chip">Account</span>
         <button id="logout-btn" type="button" class="link-btn">Log out</button>
       </div>
@@ -366,6 +350,8 @@
       </div>
     </section>
   </main>
+
+  <div id="toast-stack" class="toast-stack" aria-live="polite" aria-relevant="additions"></div>
 
   <dialog id="fund-modal" class="fund-modal">
     <form method="dialog" class="fund-modal-inner">

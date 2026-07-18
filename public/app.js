@@ -1,5 +1,4 @@
 import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
-import { OAuthExtension } from "https://cdn.jsdelivr.net/npm/@magic-ext/oauth2@9.21.0/+esm";
 import { Signature } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
 import {
   escapeHtml,
@@ -32,9 +31,19 @@ import {
   renderLedgerTable,
   exportLedgerCsv,
 } from "./js/analytics.js";
+import { showToast } from "./js/toast.js";
+import {
+  parseRoute,
+  consumeReturnPath,
+  syncHistory,
+  initRouter,
+  isProtectedView,
+  DEFAULT_ENTRY_VIEW,
+  resolveEntryRoute,
+  RETURN_PATH_KEY,
+} from "./js/router.js";
 
 const views = {
-  login: document.getElementById("view-login"),
   dashboard: document.getElementById("view-dashboard"),
   home: document.getElementById("view-home"),
   running: document.getElementById("view-running"),
@@ -44,10 +53,6 @@ const views = {
   settings: document.getElementById("view-settings"),
 };
 
-const emailInput = document.getElementById("email");
-const loginBtn = document.getElementById("login-btn");
-const googleLoginBtn = document.getElementById("google-login-btn");
-const loginStatus = document.getElementById("login-status");
 const logoutBtn = document.getElementById("logout-btn");
 const walletLabel = document.getElementById("wallet-label");
 const agentList = document.getElementById("agent-list");
@@ -142,15 +147,48 @@ let walletAddress = null;
 let lastBalances = null;
 let userEmail = null;
 let signingStep = null;
-let currentView = "login";
+let currentView = DEFAULT_ENTRY_VIEW;
 let lastResult = null;
 let runAborted = false;
 let appConfig = null;
 let lastEstimate = null;
 let lastEstimateGoal = "";
 let selectedCatalogPicks = new Set();
+let lastResultRunId = null;
 
 const stepState = new Map();
+
+function redirectUnauthorized() {
+  window.location.replace("/404.html");
+}
+
+function redirectToLogin() {
+  window.location.href = "/?open=login";
+}
+
+function updateAuthUi() {
+  const authed = Boolean(didToken);
+  if (appNav) appNav.hidden = !authed;
+  document.querySelectorAll(".session-bar").forEach((bar) => {
+    bar.hidden = !authed;
+  });
+  const back = document.getElementById("app-back-link");
+  if (back) back.hidden = authed;
+}
+
+async function requireAuth() {
+  if (didToken) {
+    try {
+      await ensureFreshDidToken();
+      return true;
+    } catch {
+      didToken = null;
+      updateAuthUi();
+    }
+  }
+  redirectUnauthorized();
+  return false;
+}
 
 function normalizeSignatureComponent(value) {
   if (value.startsWith("0x")) return value;
@@ -176,13 +214,16 @@ function serializeAuthorizationSignature(signed) {
   }).serialized;
 }
 
-function showView(name) {
-  const protectedViews = new Set([
-    "dashboard", "home", "running", "result", "history", "analytics", "settings",
-  ]);
-  if (protectedViews.has(name) && !didToken) {
-    name = "login";
+function isAuthed() {
+  return Boolean(didToken);
+}
+
+function showView(name, { updateUrl = true, historyMode = "push", runId = null } = {}) {
+  if (!isAuthed()) {
+    redirectUnauthorized();
+    return;
   }
+  document.title = "Research Agent";
   currentView = name;
   for (const [key, el] of Object.entries(views)) {
     if (!el) continue;
@@ -197,11 +238,93 @@ function showView(name) {
   if (name === "analytics") refreshAnalytics();
   if (name === "settings") refreshSettings();
   if (name === "home") refreshHome();
+
+  if (!updateUrl) return;
+
+  if (name === "running") {
+    syncHistory("running", { mode: "replace" });
+  } else {
+    syncHistory(name, {
+      runId: name === "result" ? (runId ?? lastResultRunId) : null,
+      mode: historyMode,
+    });
+  }
+}
+
+async function applyRoute(route, { fromPopstate = false } = {}) {
+  if (!isAuthed()) {
+    redirectUnauthorized();
+    return;
+  }
+
+  let { view, runId } = route;
+
+  if (!view) {
+    view = DEFAULT_ENTRY_VIEW;
+  }
+
+  if (view === "running" && currentView !== "running") {
+    showView("home", { updateUrl: !fromPopstate, historyMode: "replace" });
+    return;
+  }
+
+  if (view === "result") {
+    if (runId && didToken) {
+      try {
+        const run = await fetchRun(didToken, runId);
+        renderResult(
+          {
+            deliverable: run.deliverable,
+            spend: run.spend,
+            totalUsdc: run.totalUsdc,
+            uaTopUpTxId: run.uaTopUpTxId,
+            goal: run.goal,
+          },
+          { runId, updateUrl: false },
+        );
+        if (!fromPopstate) {
+          syncHistory("result", { runId, mode: "replace" });
+        }
+        return;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        showToast(`Could not load report: ${message}`, { type: "error" });
+        view = "history";
+        runId = null;
+      }
+    } else if (lastResult) {
+      showView("result", {
+        runId: lastResultRunId,
+        updateUrl: !fromPopstate,
+        historyMode: fromPopstate ? "none" : "replace",
+      });
+      return;
+    } else {
+      showToast("Report not available — open it from History.", { type: "info" });
+      view = DEFAULT_ENTRY_VIEW;
+      runId = null;
+    }
+  }
+
+  showView(view, {
+    runId,
+    updateUrl: !fromPopstate,
+    historyMode: fromPopstate ? "none" : "replace",
+  });
+}
+
+function applyBudgetFromSearch(search) {
+  if (!search || !budgetInput) return;
+  const parsed = parseFloat(new URLSearchParams(search).get("budget"));
+  if (Number.isFinite(parsed) && parsed > 0) budgetInput.value = String(parsed);
 }
 
 function openFundFlow() {
-  if (lastBalances) showFundModal(lastBalances);
-  else showFundModal(walletAddress);
+  requireAuth().then((ok) => {
+    if (!ok) return;
+    if (lastBalances) showFundModal(lastBalances);
+    else showFundModal(walletAddress);
+  });
 }
 
 function depositAddressNow() {
@@ -351,34 +474,6 @@ async function initMagic() {
   if (!appConfig.magicPublishableKey) throw new Error("Missing Magic publishable key");
   magic = new Magic(appConfig.magicPublishableKey, {
     network: appConfig.magicNetwork ?? "ethereum",
-    extensions: [new OAuthExtension()],
-  });
-}
-
-function oauthRedirectUri() {
-  return `${window.location.origin}/app`;
-}
-
-async function handleOAuthRedirect() {
-  if (!magic?.oauth2) return false;
-  try {
-    const result = await magic.oauth2.getRedirectResult();
-    if (result?.magic?.idToken) {
-      didToken = result.magic.idToken;
-      return true;
-    }
-  } catch {
-    // No pending OAuth redirect — normal page load.
-  }
-  return false;
-}
-
-async function loginWithGoogle() {
-  if (!magic) await initMagic();
-  loginStatus.textContent = "Redirecting to Google…";
-  await magic.oauth2.loginWithRedirect({
-    provider: "google",
-    redirectURI: oauthRedirectUri(),
   });
 }
 
@@ -396,9 +491,7 @@ async function loadUserSession() {
   const label = userEmail || `Account · ${shortAddr(walletAddress)}`;
   walletLabel.textContent = label;
   if (dashWalletLabel) dashWalletLabel.textContent = label;
-  if (appNav) appNav.hidden = false;
-  const back = document.getElementById("app-back-link");
-  if (back) back.hidden = true;
+  updateAuthUi();
 }
 
 /** Refresh Magic DID before authenticated API calls. */
@@ -433,10 +526,10 @@ async function refreshBalances(targetEl) {
 }
 
 async function refreshDashboard() {
+  if (!didToken) return;
   try {
     await ensureFreshDidToken();
   } catch {
-    showView("login");
     return;
   }
   try {
@@ -471,7 +564,7 @@ async function refreshDashboard() {
     dashboardEmpty.hidden = false;
     dashboardContent.hidden = true;
     if (isSessionExpiredError(message)) {
-      dashboardEmpty.querySelector("p").textContent = "Session expired — sign in again.";
+      dashboardEmpty.querySelector("p").textContent = "Session expired — tap Continue on your balance.";
       return;
     }
     dashboardEmpty.querySelector("p").textContent = message;
@@ -479,27 +572,35 @@ async function refreshDashboard() {
 }
 
 async function refreshHome() {
-  try {
-    await ensureFreshDidToken();
-  } catch {
-    showView("login");
-    return;
-  }
+  if (!didToken) return;
   const settings = loadSettings();
   if (settings.defaultBudget && budgetInput) {
     budgetInput.value = String(settings.defaultBudget);
   }
   homeEmpty.hidden = Boolean(goalInput?.value.trim());
+  try {
+    await ensureFreshDidToken();
+  } catch {
+    didToken = null;
+    updateAuthUi();
+    redirectToLogin();
+    return;
+  }
+  await loadAgents();
   homeBalanceStrip.hidden = false;
   await refreshBalances(homeBalanceSummary);
   await loadCustomAgents();
 }
 
 async function refreshHistory() {
+  if (!didToken) {
+    historyEmpty.hidden = false;
+    historyList.innerHTML = "";
+    return;
+  }
   try {
     await ensureFreshDidToken();
   } catch {
-    showView("login");
     return;
   }
   try {
@@ -514,10 +615,14 @@ async function refreshHistory() {
 }
 
 async function refreshAnalytics() {
+  if (!didToken) {
+    analyticsEmpty.hidden = false;
+    analyticsContent.hidden = true;
+    return;
+  }
   try {
     await ensureFreshDidToken();
   } catch {
-    showView("login");
     return;
   }
   try {
@@ -572,8 +677,14 @@ async function refreshSettings() {
 function wireHistoryButtons(container) {
   container?.querySelectorAll(".history-open-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const run = await fetchRun(didToken, btn.dataset.runId);
-      openRunInResult(run, { renderResult });
+      try {
+        const run = await fetchRun(didToken, btn.dataset.runId);
+        openRunInResult(run, {
+          renderResult: (result) => renderResult(result, { runId: run.id }),
+        });
+      } catch (err) {
+        showToast(err?.message ?? "Could not open report", { type: "error" });
+      }
     });
   });
   container?.querySelectorAll(".history-rerun-btn").forEach((btn) => {
@@ -636,8 +747,9 @@ function renderUaProof(txId) {
   uaProofBlock.removeAttribute("hidden");
 }
 
-function renderResult(result) {
+function renderResult(result, { runId = null, updateUrl = true } = {}) {
   lastResult = result;
+  lastResultRunId = runId;
   if (result.uaTopUpTxId) renderUaProof(result.uaTopUpTxId);
   else uaProofBlock?.setAttribute("hidden", "");
 
@@ -669,14 +781,14 @@ function renderResult(result) {
     followUpAnswer.innerHTML = "";
   }
   if (followUpInput) followUpInput.value = "";
-  showView("result");
+  showView("result", { runId: lastResultRunId, updateUrl });
 }
 
 async function sendFollowUp() {
   if (!lastResult?.deliverable) return;
   const question = followUpInput?.value?.trim();
   if (!question) {
-    alert("Enter a follow-up question.");
+    showToast("Enter a follow-up question.", { type: "warning" });
     return;
   }
   followUpBtn.disabled = true;
@@ -705,7 +817,7 @@ async function sendFollowUp() {
         `<details class="follow-up-thoughts"><summary>Model thinking</summary><pre>${escapeHtml(data.thoughts)}</pre></details>`;
     }
   } catch (err) {
-    alert(`Follow-up failed: ${err.message}`);
+    showToast(`Follow-up failed: ${err.message}`, { type: "error" });
   } finally {
     followUpBtn.disabled = false;
     followUpBtn.textContent = "Ask follow-up";
@@ -900,16 +1012,10 @@ function renderEstimate(estimate) {
 }
 
 async function fetchEstimate() {
-  try {
-    await ensureFreshDidToken();
-  } catch {
-    alert("Please sign in first.");
-    showView("login");
-    return;
-  }
+  if (!(await requireAuth())) return;
   const goal = goalInput.value.trim();
   if (!goal) {
-    alert("Please enter a goal or pick a template.");
+    showToast("Please enter a goal or pick a template.", { type: "warning" });
     return;
   }
 
@@ -933,7 +1039,7 @@ async function fetchEstimate() {
     const estimate = await res.json();
     renderEstimate(estimate);
   } catch (err) {
-    alert(`Estimate failed: ${err.message}`);
+    showToast(`Estimate failed: ${err.message}`, { type: "error" });
   } finally {
     estimateBtn.disabled = false;
     estimateBtn.textContent = "Check price & plan →";
@@ -941,27 +1047,24 @@ async function fetchEstimate() {
 }
 
 async function startRun() {
-  try {
-    await ensureFreshDidToken();
-  } catch {
-    alert("Please sign in first.");
-    showView("login");
-    return;
-  }
+  if (!(await requireAuth())) return;
 
   const goal = goalInput.value.trim();
   if (!goal) {
-    alert("Please enter a goal or pick a template.");
+    showToast("Please enter a goal or pick a template.", { type: "warning" });
     return;
   }
   if (!lastEstimate?.plan) {
-    alert("Check the price and plan before starting a run.");
+    showToast("Check the price and plan before starting a run.", { type: "warning" });
     return;
   }
 
   const budget = Math.min(Number(lastEstimate.suggestedBudget) || 0.1, 0.1);
   if (budget < lastEstimate.plan.totalEstUsdc) {
-    alert(`Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`);
+    showToast(
+      `Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`,
+      { type: "warning" },
+    );
     return;
   }
   budgetInput.value = String(budget);
@@ -1080,71 +1183,42 @@ async function startRun() {
 async function restoreSession() {
   const settings = loadSettings();
   applyTheme(settings.theme ?? "light");
-  if (!magic) await initMagic();
 
-  const oauthHandled = await handleOAuthRedirect();
-  if (oauthHandled) {
-    await loadUserSession();
-    loginStatus.textContent = "";
-    showView("dashboard");
-    await loadAgents();
-    wireFundModal(copyFundAddress, depositAddressNow);
-    return;
+  const launchSearch = window.location.search;
+  const returnSearch = consumeReturnPath();
+  const pendingRoute = resolveEntryRoute(
+    returnSearch ? parseRoute(returnSearch) : parseRoute(launchSearch),
+  );
+
+  if (launchSearch && pendingRoute.view && isProtectedView(pendingRoute.view)) {
+    sessionStorage.setItem(RETURN_PATH_KEY, launchSearch);
   }
+
+  if (!magic) await initMagic();
 
   const loggedIn = await magic.user.isLoggedIn();
   if (!loggedIn) {
-    showView("login");
+    redirectUnauthorized();
     return;
   }
+
   await loadUserSession();
-  showView("dashboard");
+  applyBudgetFromSearch(launchSearch);
   await loadAgents();
   wireFundModal(copyFundAddress, depositAddressNow);
+  await applyRoute(pendingRoute);
+  sessionStorage.removeItem(RETURN_PATH_KEY);
 }
-
-loginBtn.addEventListener("click", async () => {
-  const email = emailInput.value.trim();
-  if (!email) {
-    loginStatus.textContent = "Enter your email.";
-    return;
-  }
-  loginBtn.disabled = true;
-  loginStatus.textContent = "Check your email for the code…";
-  try {
-    if (!magic) await initMagic();
-    await magic.auth.loginWithEmailOTP({ email, showUI: true });
-    await loadUserSession();
-    loginStatus.textContent = "";
-    showView("dashboard");
-    await loadAgents();
-    wireFundModal(copyFundAddress, depositAddressNow);
-  } catch (err) {
-    loginStatus.textContent = `Sign in failed: ${err.message}`;
-  } finally {
-    loginBtn.disabled = false;
-  }
-});
-
-googleLoginBtn?.addEventListener("click", async () => {
-  googleLoginBtn.disabled = true;
-  try {
-    await loginWithGoogle();
-  } catch (err) {
-    loginStatus.textContent = `Google sign in failed: ${err.message}`;
-    googleLoginBtn.disabled = false;
-  }
-});
 
 async function logout() {
   if (magic) await magic.user.logout();
   didToken = null;
   walletAddress = null;
   lastBalances = null;
-  if (appNav) appNav.hidden = true;
-  const back = document.getElementById("app-back-link");
-  if (back) back.hidden = false;
-  showView("login");
+  lastResult = null;
+  lastResultRunId = null;
+  updateAuthUi();
+  window.location.href = "/";
 }
 
 logoutBtn.addEventListener("click", logout);
@@ -1172,11 +1246,23 @@ stopBtn.addEventListener("click", async () => {
 againBtn.addEventListener("click", () => showView("home"));
 
 document.querySelectorAll(".nav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => showView(btn.dataset.view));
+  btn.addEventListener("click", () => {
+    if (!isAuthed()) {
+      redirectUnauthorized();
+      return;
+    }
+    showView(btn.dataset.view);
+  });
 });
 
 document.querySelectorAll("[data-goto]").forEach((el) => {
-  el.addEventListener("click", () => showView(el.dataset.goto));
+  el.addEventListener("click", () => {
+    if (!isAuthed()) {
+      redirectUnauthorized();
+      return;
+    }
+    showView(el.dataset.goto);
+  });
 });
 
 refreshBalanceBtn?.addEventListener("click", () => refreshBalances(balanceDetails));
@@ -1193,9 +1279,9 @@ document.addEventListener("click", async (ev) => {
     openFundFlow();
     return;
   }
-  if (action === "relogin") {
+  if (action === "open-login" || action === "relogin") {
     ev.preventDefault();
-    await logout();
+    redirectToLogin();
     return;
   }
   if (action === "copy-deposit") {
@@ -1208,7 +1294,7 @@ document.addEventListener("click", async (ev) => {
       btn.textContent = "Copied!";
       setTimeout(() => { btn.textContent = prev; }, 2000);
     } catch {
-      alert(addr);
+      showToast(addr, { type: "info", duration: 8000 });
     }
   }
 });
@@ -1222,14 +1308,15 @@ document.getElementById("magic-wallet-ui-btn")?.addEventListener("click", async 
     if (!magic) await initMagic();
     await magic.wallet.showUI();
   } catch (err) {
-    alert(err?.message ?? "Magic wallet UI unavailable");
+    showToast(err?.message ?? "Magic wallet UI unavailable", { type: "error" });
   }
 });
 
 saveAgentBtn?.addEventListener("click", async () => {
+  if (!(await requireAuth())) return;
   const goal = goalInput.value.trim();
   if (!goal) {
-    alert("Enter a goal first.");
+    showToast("Enter a goal first.", { type: "warning" });
     return;
   }
   const name = prompt("Agent name:");
@@ -1243,7 +1330,7 @@ saveAgentBtn?.addEventListener("click", async () => {
     });
     await loadCustomAgents();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, { type: "error" });
   }
 });
 
@@ -1262,7 +1349,7 @@ settingsNotifications?.addEventListener("change", async () => {
     const perm = await requestNotificationPermission();
     if (perm !== "granted") {
       settingsNotifications.checked = false;
-      alert("Notification permission denied.");
+      showToast("Notification permission denied.", { type: "warning" });
       return;
     }
   }
@@ -1303,7 +1390,7 @@ downloadPdfBtn?.addEventListener("click", async () => {
     doc.text(lines, 15, 20);
     doc.save("deliverable.pdf");
   } catch {
-    alert("PDF export unavailable offline.");
+    showToast("PDF export unavailable offline.", { type: "info" });
   }
 });
 
@@ -1324,10 +1411,8 @@ goalInput?.addEventListener("input", () => {
   if (goalInput.value.trim() !== lastEstimateGoal) hideEstimate();
 });
 
-const launchBudget = new URLSearchParams(window.location.search).get("budget");
-if (launchBudget && budgetInput) {
-  const parsed = parseFloat(launchBudget);
-  if (Number.isFinite(parsed) && parsed > 0) budgetInput.value = String(parsed);
-}
+applyBudgetFromSearch(window.location.search);
+
+initRouter((route, meta) => applyRoute(route, { fromPopstate: meta.fromPopstate }));
 
 restoreSession();

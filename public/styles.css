@@ -1804,6 +1804,113 @@ body.app-product .nav-btn {
   border-radius: 8px;
 }
 
+/* ── Toast stack (neo-brutalist) ── */
+.toast-stack {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: min(22rem, calc(100vw - 2 * var(--space-md)));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--border-w) solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow) var(--shadow) 0 var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateX(1.25rem);
+  transition:
+    opacity var(--motion),
+    transform var(--motion);
+}
+
+.toast--in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast--out {
+  opacity: 0;
+  transform: translateX(1.25rem);
+}
+
+.toast-message {
+  margin: 0;
+  flex: 1;
+  font-weight: 500;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: 800;
+}
+
+.toast-close:hover {
+  background: var(--lime);
+}
+
+.toast--success {
+  background: var(--lime);
+}
+
+.toast--info {
+  background: var(--cyan);
+}
+
+.toast--warning {
+  background: var(--yellow);
+}
+
+.toast--error {
+  background: var(--pink);
+  color: var(--paper);
+}
+
+.toast--error .toast-close {
+  border-color: var(--paper);
+  background: transparent;
+  color: var(--paper);
+}
+
+.toast--error .toast-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+    transform: none;
+  }
+  .toast--in,
+  .toast--out {
+    transform: none;
+  }
+}
+
 html[data-theme="dark"] body.app-product {
   --bg: #121212;
   --paper: #1c1c1c;

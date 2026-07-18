@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>404 — x402 Orchestrator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/landing.css" />
+</head>
+<body class="page-404">
+  <script>
+    if (location.hostname === "127.0.0.1") {
+      location.replace("http://localhost:" + (location.port || "4020") + location.pathname + location.search + location.hash);
+    }
+  </script>
+  <div class="paper-bg"></div>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="ticker-track">
+      <span><i class="ticker-dot"></i> 404 · PAGE NOT FOUND · LAUNCH FROM HOMEPAGE</span>
+      <span><i class="ticker-dot"></i> 404 · PAGE NOT FOUND · LAUNCH FROM HOMEPAGE</span>
+    </div>
+  </div>
+
+  <header class="nav-wrap">
+    <nav class="nav">
+      <div class="nav-left">
+        <a class="logo" href="/">X402 <b>// ORCHESTRATOR</b></a>
+      </div>
+      <div class="nav-actions">
+        <a class="nav-cta" href="/?open=login">LAUNCH APP →</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="err404">
+    <div class="err404-grid" aria-hidden="true">
+      <span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="err404-inner">
+      <p class="err404-kicker">ERROR · 404</p>
+      <h1 class="err404-title">
+        <span class="err404-stroke">NOT</span>
+        <span class="err404-fill">FOUND</span>
+      </h1>
+      <p class="err404-lead">
+        This app route doesn’t exist — or you need to <strong>launch from the homepage</strong> first.
+      </p>
+
+      <div class="err404-panel">
+        <div class="err404-stat">
+          <span class="err404-stat-label">STATUS</span>
+          <span class="err404-stat-value">UNAUTHORIZED</span>
+        </div>
+        <div class="err404-stat">
+          <span class="err404-stat-label">HINT</span>
+          <span class="err404-stat-value">USE LAUNCH APP</span>
+        </div>
+      </div>
+
+      <div class="err404-actions">
+        <a class="btn btn-primary" href="/">← BACK TO SITE</a>
+        <a class="btn btn-secondary" href="/?open=login">LAUNCH APP →</a>
+      </div>
+    </div>
+
+    <div class="err404-deco err404-deco--lime" aria-hidden="true">404</div>
+    <div class="err404-deco err404-deco--pink" aria-hidden="true">×</div>
+  </main>
+
+  <footer class="footer footer--compact">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="footer-tag">NOT FINANCIAL ADVICE</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

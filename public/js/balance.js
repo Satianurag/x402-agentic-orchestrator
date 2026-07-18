@@ -39,9 +39,9 @@ export function isSessionExpiredError(message) {
 export function renderSessionExpiredHtml() {
   return `
     <p class="balance-primary balance-primary--low">Session expired</p>
-    <p class="balance-hint">Sign in again to see credit and deposit address.</p>
+    <p class="balance-hint">Continue to refresh your account.</p>
     <div class="balance-fund-row">
-      <button type="button" class="btn btn-primary btn-sm" data-action="relogin">Sign in again</button>
+      <button type="button" class="btn btn-primary btn-sm" data-action="open-login">Continue</button>
     </div>
   `;
 }
@@ -111,7 +111,7 @@ export async function showFundModal(balancesOrAddress) {
     } else {
       guidanceEl.innerHTML = `
         <li>Deposit address unavailable${uaError ? ` (${escapeHtml(uaError)})` : ""}.</li>
-        <li>Sign in again, then open Add funds.</li>
+        <li>Open Add funds from the app menu after your session is active.</li>
       `;
     }
   }
