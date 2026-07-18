@@ -46,6 +46,23 @@ export function renderSessionExpiredHtml() {
   `;
 }
 
+export function renderDepositPanelHtml(balances) {
+  const deposit = pickDepositAddress(balances) || "";
+  const depositLabel = balances.uaSmartAccountAddress
+    ? "Your deposit address"
+    : "Your deposit address (Base USDC)";
+  return `
+    <div class="balance-fund-row">
+      <button type="button" class="btn btn-primary btn-sm" data-action="add-funds">Add funds</button>
+      ${deposit ? `<button type="button" class="btn btn-secondary btn-sm" data-action="copy-deposit" data-address="${escapeHtml(deposit)}">Copy address</button>` : ""}
+    </div>
+    <div class="balance-deposit" ${deposit ? "" : "hidden"}>
+      <p class="balance-deposit-label">${escapeHtml(depositLabel)}</p>
+      <code class="balance-deposit-addr" title="${escapeHtml(deposit)}">${escapeHtml(deposit)}</code>
+    </div>
+  `;
+}
+
 export function renderBalanceHtml(balances) {
   const available = pickAvailableCredit(balances);
   const low = available < 0.05;

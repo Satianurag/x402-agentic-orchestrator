@@ -6,7 +6,7 @@
   <title>x402 // Orchestrator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body class="app-product">
@@ -18,29 +18,24 @@
   <div class="paper-bg paper-bg--soft" aria-hidden="true"></div>
 
   <header class="app-header app-header--product">
-    <p class="app-back" id="app-back-link"><a href="/">← Site</a></p>
-    <nav id="app-nav" class="app-nav" hidden aria-label="Main navigation">
-      <button type="button" class="nav-btn" data-view="dashboard">Home</button>
-      <button type="button" class="nav-btn nav-btn--active" data-view="home">New task</button>
-      <button type="button" class="nav-btn" data-view="history">History</button>
-      <button type="button" class="nav-btn" data-view="analytics">Billing</button>
-      <button type="button" class="nav-btn" data-view="settings">Settings</button>
-    </nav>
+    <div class="app-header-inner">
+      <button type="button" class="app-brand" data-view="home">x402</button>
+      <nav id="app-nav" class="app-nav" hidden aria-label="Main navigation">
+        <button type="button" class="nav-btn nav-btn--active" data-view="home">Home</button>
+        <button type="button" class="nav-btn" data-view="history">History</button>
+        <button type="button" class="nav-btn" data-view="analytics">Billing</button>
+        <button type="button" class="nav-btn" data-view="settings">Settings</button>
+      </nav>
+    </div>
   </header>
 
   <main class="app-main">
-    <!-- DASHBOARD -->
-    <section id="view-dashboard" class="view" hidden>
-      <div class="session-bar" hidden>
-        <span id="dash-wallet-label" class="account-chip">Account</span>
-        <button id="dash-logout-btn" type="button" class="link-btn">Log out</button>
-      </div>
-
+    <!-- HOME (overview + new task) -->
+    <section id="view-home" class="view" hidden>
       <div id="dashboard-empty" class="empty-state" hidden>
         <h2>Welcome — run your first task</h2>
         <p>Pick a template or describe what you need. You will see the price before anything runs.</p>
         <div class="empty-state-actions">
-          <button type="button" class="btn btn-primary" data-goto="home">Start a task →</button>
           <button type="button" class="btn btn-secondary" id="empty-fund-btn" data-action="add-funds">Add funds</button>
         </div>
         <div id="empty-balance-details" class="balance-details empty-balance-details"></div>
@@ -63,7 +58,6 @@
           <article class="stat-card stat-card--actions">
             <h3>Quick actions</h3>
             <div class="quick-actions">
-              <button type="button" class="btn btn-primary btn-sm" data-goto="home">New task</button>
               <button type="button" class="btn btn-secondary btn-sm" data-goto="history">History</button>
               <button type="button" class="btn btn-secondary btn-sm" id="fund-wallet-btn">Add funds</button>
             </div>
@@ -74,31 +68,13 @@
           <strong>Spend notice</strong>
           <span id="overage-banner-text"></span>
         </div>
-
-        <div class="view-card">
-          <h2>Recent tasks</h2>
-          <div id="recent-runs-list" class="history-list"></div>
-        </div>
       </div>
-    </section>
-
-    <!-- HOME -->
-    <section id="view-home" class="view" hidden>
-      <div class="session-bar" hidden>
-        <span id="wallet-label" class="account-chip">Account</span>
-        <button id="logout-btn" type="button" class="link-btn">Log out</button>
-      </div>
-
-      <article id="home-balance-strip" class="balance-strip" hidden>
-        <div id="home-balance-summary" class="balance-summary"></div>
-        <button id="home-refresh-balance" type="button" class="link-btn">Refresh</button>
-      </article>
 
       <div id="home-empty" class="empty-state empty-state--compact" hidden>
         <p><strong>Tip:</strong> Start with a template — you will always see the price before a run starts.</p>
       </div>
 
-      <div class="view-card">
+      <div class="view-card home-task-card">
         <h2>What should the agent do?</h2>
         <p class="section-lead">Pick a template or write your own goal. We plan the steps and show you the estimated cost first.</p>
 
@@ -304,9 +280,15 @@
       <div class="view-card">
         <h2>Settings</h2>
 
+        <div class="settings-group settings-group--account">
+          <h3>Account</h3>
+          <p id="settings-account-email" class="settings-account-email">—</p>
+          <p class="field-note">Signed in with this email.</p>
+        </div>
+
         <div class="settings-group">
           <h3>Wallet &amp; deposits</h3>
-          <p class="field-note">Copy your deposit address, send USDC on Base, then refresh. That is the funding path for runs.</p>
+          <p class="field-note">Copy your deposit address, send USDC on Base, then refresh on Home. Available credit is shown on Home.</p>
           <div id="settings-wallet-panel" class="settings-wallet-panel">
             <p class="empty-hint">Loading wallet…</p>
           </div>
@@ -346,12 +328,25 @@
           </div>
         </details>
 
-        <button id="settings-logout-btn" type="button" class="btn btn-danger">Sign out</button>
+        <div class="settings-group settings-group--danger">
+          <button id="settings-logout-btn" type="button" class="btn btn-danger">Sign out</button>
+        </div>
       </div>
     </section>
   </main>
 
   <div id="toast-stack" class="toast-stack" aria-live="polite" aria-relevant="additions"></div>
+
+  <dialog id="logout-modal" class="logout-modal">
+    <form method="dialog" class="logout-modal-inner">
+      <h2>Sign out?</h2>
+      <p class="hint">You will need to sign in again to run tasks.</p>
+      <div class="logout-modal-actions">
+        <button type="submit" class="btn btn-secondary" value="cancel">Cancel</button>
+        <button type="button" id="logout-confirm-btn" class="btn btn-danger">Sign out</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="fund-modal" class="fund-modal">
     <form method="dialog" class="fund-modal-inner">

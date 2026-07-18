@@ -13,9 +13,8 @@ import {
   notifyRunComplete,
   isInsufficientFunds,
   formatUsdc,
-  shortAddr,
 } from "./js/utils.js";
-import { fetchBalance, renderBalanceHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
+import { fetchBalance, renderBalanceHtml, renderDepositPanelHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
 import { closeDialogsBeforeMagicUi } from "./js/magic-ui.js";
 import {
   fetchHistory,
@@ -47,8 +46,7 @@ import {
 const APP_BRAND = "x402 // Orchestrator";
 
 const VIEW_TAB_LABELS = {
-  dashboard: "Home",
-  home: "New task",
+  home: "Home",
   running: "Running",
   result: "Output",
   history: "History",
@@ -62,7 +60,6 @@ function setDocumentTitle(view) {
 }
 
 const views = {
-  dashboard: document.getElementById("view-dashboard"),
   home: document.getElementById("view-home"),
   running: document.getElementById("view-running"),
   result: document.getElementById("view-result"),
@@ -71,8 +68,6 @@ const views = {
   settings: document.getElementById("view-settings"),
 };
 
-const logoutBtn = document.getElementById("logout-btn");
-const walletLabel = document.getElementById("wallet-label");
 const agentList = document.getElementById("agent-list");
 const customAgentList = document.getElementById("custom-agent-list");
 const customAgentsFieldset = document.getElementById("custom-agents-fieldset");
@@ -124,9 +119,6 @@ const followUpAnswer = document.getElementById("follow-up-answer");
 const downloadMdBtn = document.getElementById("download-md-btn");
 const downloadPdfBtn = document.getElementById("download-pdf-btn");
 const shareSummaryBtn = document.getElementById("share-summary-btn");
-const homeBalanceStrip = document.getElementById("home-balance-strip");
-const homeBalanceSummary = document.getElementById("home-balance-summary");
-const homeRefreshBalance = document.getElementById("home-refresh-balance");
 const homeEmpty = document.getElementById("home-empty");
 const balanceDetails = document.getElementById("balance-details");
 const refreshBalanceBtn = document.getElementById("refresh-balance-btn");
@@ -138,7 +130,6 @@ const emptyBalanceDetails = document.getElementById("empty-balance-details");
 const settingsWalletPanel = document.getElementById("settings-wallet-panel");
 const dashCumulative = document.getElementById("dash-cumulative");
 const dashRunCount = document.getElementById("dash-run-count");
-const recentRunsList = document.getElementById("recent-runs-list");
 const overageBanner = document.getElementById("overage-banner");
 const overageBannerText = document.getElementById("overage-banner-text");
 const historyEmpty = document.getElementById("history-empty");
@@ -156,8 +147,9 @@ const settingsTheme = document.getElementById("settings-theme");
 const settingsNotifications = document.getElementById("settings-notifications");
 const healthList = document.getElementById("health-list");
 const settingsLogoutBtn = document.getElementById("settings-logout-btn");
-const dashLogoutBtn = document.getElementById("dash-logout-btn");
-const dashWalletLabel = document.getElementById("dash-wallet-label");
+const settingsAccountEmail = document.getElementById("settings-account-email");
+const logoutModal = document.getElementById("logout-modal");
+const logoutConfirmBtn = document.getElementById("logout-confirm-btn");
 
 let magic = null;
 let didToken = null;
@@ -187,11 +179,6 @@ function redirectToLogin() {
 function updateAuthUi() {
   const authed = Boolean(didToken);
   if (appNav) appNav.hidden = !authed;
-  document.querySelectorAll(".session-bar").forEach((bar) => {
-    bar.hidden = !authed;
-  });
-  const back = document.getElementById("app-back-link");
-  if (back) back.hidden = authed;
 }
 
 async function requireAuth() {
@@ -241,6 +228,7 @@ function showView(name, { updateUrl = true, historyMode = "push", runId = null }
     redirectUnauthorized();
     return;
   }
+  if (name === "dashboard") name = "home";
   setDocumentTitle(name);
   currentView = name;
   for (const [key, el] of Object.entries(views)) {
@@ -251,11 +239,10 @@ function showView(name, { updateUrl = true, historyMode = "push", runId = null }
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.classList.toggle("nav-btn--active", btn.dataset.view === name);
   });
-  if (name === "dashboard") refreshDashboard();
+  if (name === "home") refreshHome();
   if (name === "history") refreshHistory();
   if (name === "analytics") refreshAnalytics();
   if (name === "settings") refreshSettings();
-  if (name === "home") refreshHome();
 
   if (!updateUrl) return;
 
@@ -506,9 +493,9 @@ async function loadUserSession() {
   walletAddress = resolveWalletAddress(meta);
   if (!walletAddress) throw new Error("Account is missing a wallet address");
   userEmail = meta.email ?? null;
-  const label = userEmail || `Account · ${shortAddr(walletAddress)}`;
-  walletLabel.textContent = label;
-  if (dashWalletLabel) dashWalletLabel.textContent = label;
+  if (settingsAccountEmail) {
+    settingsAccountEmail.textContent = userEmail ?? "—";
+  }
   updateAuthUi();
 }
 
@@ -543,52 +530,6 @@ async function refreshBalances(targetEl) {
   }
 }
 
-async function refreshDashboard() {
-  if (!didToken) return;
-  try {
-    await ensureFreshDidToken();
-  } catch {
-    return;
-  }
-  try {
-    const [history, analytics] = await Promise.all([
-      fetchHistory(didToken),
-      fetchAnalytics(didToken),
-    ]);
-    const hasRuns = history.length > 0;
-    dashboardEmpty.hidden = hasRuns;
-    dashboardContent.hidden = !hasRuns;
-    if (!hasRuns) {
-      // First-time users: Add funds used to live only in dashboard-content (hidden).
-      await refreshBalances(emptyBalanceDetails);
-      return;
-    }
-
-    dashCumulative.textContent = formatUsdc(analytics.cumulativeSpend);
-    dashRunCount.textContent = `${analytics.totalRuns} task${analytics.totalRuns === 1 ? "" : "s"}`;
-    renderHistoryList(recentRunsList, history.slice(0, 5), { compact: true });
-    wireHistoryButtons(recentRunsList);
-
-    if (analytics.recentOverBudget > 0) {
-      overageBanner.hidden = false;
-      overageBannerText.textContent = `${analytics.recentOverBudget} recent task(s) spent more than the run limit.`;
-    } else {
-      overageBanner.hidden = true;
-    }
-
-    await refreshBalances(balanceDetails);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    dashboardEmpty.hidden = false;
-    dashboardContent.hidden = true;
-    if (isSessionExpiredError(message)) {
-      dashboardEmpty.querySelector("p").textContent = "Session expired — tap Continue on your balance.";
-      return;
-    }
-    dashboardEmpty.querySelector("p").textContent = message;
-  }
-}
-
 async function refreshHome() {
   if (!didToken) return;
   const settings = loadSettings();
@@ -605,9 +546,42 @@ async function refreshHome() {
     return;
   }
   await loadAgents();
-  homeBalanceStrip.hidden = false;
-  await refreshBalances(homeBalanceSummary);
   await loadCustomAgents();
+
+  try {
+    const [history, analytics] = await Promise.all([
+      fetchHistory(didToken),
+      fetchAnalytics(didToken),
+    ]);
+    const hasRuns = history.length > 0;
+    dashboardEmpty.hidden = hasRuns;
+    dashboardContent.hidden = !hasRuns;
+    if (!hasRuns) {
+      await refreshBalances(emptyBalanceDetails);
+      return;
+    }
+
+    dashCumulative.textContent = formatUsdc(analytics.cumulativeSpend);
+    dashRunCount.textContent = `${analytics.totalRuns} task${analytics.totalRuns === 1 ? "" : "s"}`;
+
+    if (analytics.recentOverBudget > 0) {
+      overageBanner.hidden = false;
+      overageBannerText.textContent = `${analytics.recentOverBudget} recent task(s) spent more than the run limit.`;
+    } else {
+      overageBanner.hidden = true;
+    }
+
+    await refreshBalances(balanceDetails);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    dashboardEmpty.hidden = false;
+    dashboardContent.hidden = true;
+    if (isSessionExpiredError(message)) {
+      dashboardEmpty.querySelector("p").textContent = "Session expired — open Settings to sign in again.";
+      return;
+    }
+    dashboardEmpty.querySelector("p").textContent = message;
+  }
 }
 
 async function refreshHistory() {
@@ -670,7 +644,23 @@ async function refreshSettings() {
   settingsNotifications.checked = Boolean(settings.notifications);
 
   if (didToken && settingsWalletPanel) {
-    await refreshBalances(settingsWalletPanel);
+    try {
+      await ensureFreshDidToken();
+      const balances = await fetchBalance(didToken);
+      lastBalances = balances;
+      settingsWalletPanel.innerHTML = renderDepositPanelHtml(balances);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === "SESSION_EXPIRED" || isSessionExpiredError(message)) {
+        settingsWalletPanel.innerHTML = renderSessionExpiredHtml();
+      } else {
+        settingsWalletPanel.innerHTML = `<p class="empty-hint">${escapeHtml(message)}</p>`;
+      }
+    }
+  }
+
+  if (settingsAccountEmail) {
+    settingsAccountEmail.textContent = userEmail ?? "—";
   }
 
   try {
@@ -1232,6 +1222,7 @@ async function logout() {
   if (magic) await magic.user.logout();
   didToken = null;
   walletAddress = null;
+  userEmail = null;
   lastBalances = null;
   lastResult = null;
   lastResultRunId = null;
@@ -1239,9 +1230,24 @@ async function logout() {
   window.location.href = "/";
 }
 
-logoutBtn.addEventListener("click", logout);
-dashLogoutBtn?.addEventListener("click", logout);
-settingsLogoutBtn?.addEventListener("click", logout);
+function openLogoutModal() {
+  if (!logoutModal) {
+    logout();
+    return;
+  }
+  if (logoutModal.open) return;
+  logoutModal.showModal();
+}
+
+settingsLogoutBtn?.addEventListener("click", () => openLogoutModal());
+logoutConfirmBtn?.addEventListener("click", () => {
+  logoutModal?.close();
+  logout();
+});
+logoutModal?.addEventListener("cancel", (ev) => {
+  ev.preventDefault();
+  logoutModal.close();
+});
 
 estimateBtn?.addEventListener("click", fetchEstimate);
 runBtn.addEventListener("click", startRun);
@@ -1284,8 +1290,16 @@ document.querySelectorAll("[data-goto]").forEach((el) => {
 });
 
 refreshBalanceBtn?.addEventListener("click", () => refreshBalances(balanceDetails));
-homeRefreshBalance?.addEventListener("click", () => refreshBalances(homeBalanceSummary));
 fundWalletBtn?.addEventListener("click", () => openFundFlow());
+
+document.querySelector(".app-brand")?.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  if (!isAuthed()) {
+    redirectUnauthorized();
+    return;
+  }
+  showView("home");
+});
 
 // Add funds / copy address — buttons are rendered dynamically in balance HTML
 document.addEventListener("click", async (ev) => {

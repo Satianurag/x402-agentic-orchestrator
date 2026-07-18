@@ -1601,185 +1601,95 @@ select {
   .view.active { animation: none; }
 }
 
-/* ── Product app mode (/app) — calm consumer UX ── */
-body.app-product {
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", monospace;
-  --bg: #f7f7f5;
-  --paper: #ffffff;
-  --border-w: 1px;
-  --shadow: 0;
-  --radius: 12px;
-  font-family: "Inter", var(--font-sans);
-}
-
-body.app-product .paper-bg--soft {
-  opacity: 0.02;
-  background-size: 24px 24px;
-}
-
-body.app-product .app-header {
-  box-shadow: none;
-  border-bottom: 1px solid #e8e8e4;
-  padding: 1rem 1.25rem;
-}
-
-body.app-product .app-header h1 {
-  font-family: "Space Grotesk", var(--font-sans);
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  text-transform: none;
-}
-
-body.app-product .app-tagline {
-  font-size: 0.95rem;
-  color: var(--muted);
-  max-width: 36rem;
-}
-
-body.app-product .app-back {
-  font-family: inherit;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-body.app-product .account-chip {
-  font-size: 0.875rem;
-  font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: #f0f0ec;
-  border: 1px solid #e0e0da;
-}
-
-body.app-product .view-card {
-  border-radius: var(--radius);
-  border: 1px solid #e8e8e4;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-body.app-product .btn {
-  border-radius: 10px;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  box-shadow: none;
-}
-
-body.app-product .btn-google {
-  width: 100%;
-  background: #fff;
-  border: 1px solid #dadce0;
-  color: #3c4043;
+/* ── Product app mode (/app) — aligned with landing brutalist ── */
+body.app-product .app-header-inner {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1rem;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
 }
 
-body.app-product .btn-google::before {
-  content: "G";
-  font-weight: 700;
-  color: #4285f4;
-}
-
-body.app-product .login-divider {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin: 1rem 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-body.app-product .login-divider::before,
-body.app-product .login-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: #e8e8e4;
-}
-
-body.app-product .balance-primary {
-  font-size: 2rem;
-  font-weight: 700;
+body.app-product .app-brand {
   margin: 0;
-  letter-spacing: -0.02em;
-}
-
-body.app-product .balance-primary--low {
-  color: #b45309;
-}
-
-body.app-product .balance-hint {
-  margin: 0.25rem 0 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-body.app-product .balance-advanced {
-  margin-top: 0.75rem;
-  font-size: 0.875rem;
-}
-
-body.app-product .progress-meter {
-  border: 1px solid #e8e8e4;
-  border-radius: var(--radius);
-  background: #fff;
-}
-
-body.app-product .budget-meter-title {
-  text-transform: none;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-body.app-product .ua-topup-card--compact {
-  border: 1px solid #e8e8e4;
-  border-radius: var(--radius);
-  background: #fafaf8;
-  box-shadow: none;
-}
-
-body.app-product .ua-topup-card--compact .ua-topup-glow {
-  display: none;
-}
-
-body.app-product .deliverable--hero {
-  border: 1px solid #e8e8e4;
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  background: #fff;
-  margin-bottom: 1.5rem;
-}
-
-body.app-product .receipt-details {
-  margin: 1.5rem 0;
-  border: 1px solid #e8e8e4;
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  background: #fafaf8;
-}
-
-body.app-product .receipt-details summary {
+  padding: 0.35rem 0.75rem;
+  border: var(--border-w) solid var(--ink);
+  background: var(--lime);
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   cursor: pointer;
-  font-weight: 600;
+  box-shadow: 4px 4px 0 var(--ink);
 }
 
-body.app-product .advanced-panel,
-body.app-product .log-details--dev {
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  color: var(--muted);
+body.app-product .app-brand:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
 }
 
-body.app-product .estimate-budget-warn {
-  color: #b45309;
-  font-size: 0.875rem;
-  margin: 0.5rem 0 0;
+body.app-product .app-nav {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+body.app-product .home-task-card {
+  margin-top: var(--space-lg);
+}
+
+body.app-product .settings-account-email {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: var(--border-w) solid var(--ink);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  word-break: break-all;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+body.app-product .settings-group--danger {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: var(--border-w) solid var(--ink);
+}
+
+body.app-product .logout-modal {
+  border: var(--border-w) solid var(--ink);
+  padding: 0;
+  max-width: 24rem;
+  width: min(24rem, calc(100vw - 2rem));
+  box-shadow: var(--shadow) var(--shadow) 0 var(--ink);
+}
+
+body.app-product .logout-modal::backdrop {
+  background: rgba(15, 15, 15, 0.55);
+}
+
+body.app-product .logout-modal-inner {
+  padding: var(--space-xl) var(--space-lg) var(--space-lg);
+  background: var(--paper);
+}
+
+body.app-product .logout-modal-inner h2 {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  text-transform: uppercase;
+  line-height: 0.95;
+}
+
+body.app-product .logout-modal-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+body.app-product .logout-modal-actions .btn {
+  flex: 1;
 }
 
 body.app-product .visually-hidden {
@@ -1791,17 +1701,6 @@ body.app-product .visually-hidden {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
-}
-
-body.app-product .timeline-step {
-  border-radius: 10px;
-  border-width: 1px;
-}
-
-body.app-product .nav-btn {
-  text-transform: none;
-  font-weight: 500;
-  border-radius: 8px;
 }
 
 /* ── Toast stack (neo-brutalist) ── */
