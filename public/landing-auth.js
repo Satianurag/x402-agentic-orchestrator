@@ -5,9 +5,57 @@ export const LAUNCH_BUDGET_KEY = "x402-launch-budget";
 
 let magic = null;
 let loginResolve = null;
+let otpHandle = null;
+let pendingEmail = "";
+let otpCancelled = false;
+let pendingOtpSentResolve = null;
 
 const loginModal = () => document.getElementById("login-modal");
 const loginStatus = () => document.getElementById("login-status");
+const emailStep = () => document.getElementById("login-step-email");
+const otpStep = () => document.getElementById("login-step-otp");
+
+function setLoginStatus(message) {
+  const status = loginStatus();
+  if (status) status.textContent = message;
+}
+
+function setLoginStep(step) {
+  const email = emailStep();
+  const otp = otpStep();
+  if (email) email.hidden = step !== "email";
+  if (otp) otp.hidden = step !== "otp";
+}
+
+function setLoginControlsDisabled(disabled) {
+  for (const id of ["login-btn", "google-login-btn", "otp-verify-btn", "otp-resend-btn", "otp-back-btn"]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  }
+}
+
+function resetLoginModalUi() {
+  setLoginStep("email");
+  setLoginStatus("");
+  const otpInput = document.getElementById("otp");
+  if (otpInput) otpInput.value = "";
+}
+
+function abortEmailOtpHandle() {
+  if (!otpHandle) return;
+  try {
+    otpHandle.emit("cancel");
+  } catch {
+    // Flow may already be settled.
+  }
+  otpHandle = null;
+}
+
+function cancelEmailOtpFlow() {
+  abortEmailOtpHandle();
+  otpCancelled = true;
+  pendingOtpSentResolve = null;
+}
 
 export function pickLaunchBudget() {
   const slider = document.getElementById("capSlider");
@@ -49,8 +97,7 @@ export function openLoginModal() {
   const modal = loginModal();
   if (!modal) return Promise.resolve(false);
   if (modal.open) return Promise.resolve(true);
-  const status = loginStatus();
-  if (status) status.textContent = "";
+  resetLoginModalUi();
   return new Promise((resolve) => {
     loginResolve = resolve;
     modal.showModal();
@@ -58,6 +105,8 @@ export function openLoginModal() {
 }
 
 export function closeLoginModal(success = false) {
+  cancelEmailOtpFlow();
+  resetLoginModalUi();
   if (loginResolve) {
     const resolve = loginResolve;
     loginResolve = null;
@@ -94,25 +143,136 @@ export async function launchApp() {
   await openLoginModal();
 }
 
+function onOtpEmailSent({ resend = false } = {}) {
+  setLoginStep("otp");
+  const display = document.getElementById("otp-email-display");
+  if (display) display.textContent = pendingEmail;
+  const otpInput = document.getElementById("otp");
+  if (otpInput) {
+    otpInput.value = "";
+    otpInput.focus();
+  }
+  setLoginStatus(resend ? "New code sent." : "");
+  setLoginControlsDisabled(false);
+  pendingOtpSentResolve?.();
+  pendingOtpSentResolve = null;
+}
+
+function onOtpLoginFailed(message) {
+  if (otpCancelled) return;
+  setLoginStatus(message);
+  setLoginStep("email");
+  setLoginControlsDisabled(false);
+  otpHandle = null;
+  pendingOtpSentResolve = null;
+}
+
+function wireOtpHandle(handle, { resend = false } = {}) {
+  handle.on("email-otp-sent", () => onOtpEmailSent({ resend }));
+
+  handle.on("invalid-email-otp", () => {
+    setLoginStatus("Invalid code. Try again.");
+    document.getElementById("otp")?.select();
+    setLoginControlsDisabled(false);
+  });
+
+  handle.on("error", (err) => {
+    onOtpLoginFailed(`Sign in failed: ${err?.message ?? "Unknown error"}`);
+  });
+
+  handle
+    .then(() => {
+      if (otpCancelled) return;
+      otpHandle = null;
+      closeLoginModal(true);
+      enterApp();
+    })
+    .catch((err) => {
+      onOtpLoginFailed(`Sign in failed: ${err?.message ?? "Unknown error"}`);
+    });
+}
+
+async function sendOtpToEmail(email, { resend = false } = {}) {
+  pendingEmail = email;
+  abortEmailOtpHandle();
+  otpCancelled = false;
+  setLoginControlsDisabled(true);
+  setLoginStatus(resend ? "Sending a new code…" : "Sending code…");
+
+  await initMagic();
+  const handle = magic.auth.loginWithEmailOTP({
+    email,
+    showUI: false,
+    deviceCheckUI: false,
+  });
+  otpHandle = handle;
+  wireOtpHandle(handle, { resend });
+
+  await new Promise((resolve, reject) => {
+    pendingOtpSentResolve = resolve;
+    const onSendError = (err) => {
+      pendingOtpSentResolve = null;
+      handle.off?.("error", onSendError);
+      reject(err);
+    };
+    handle.on("error", onSendError);
+  });
+}
+
 async function loginWithEmail() {
   const emailInput = document.getElementById("email");
-  const loginBtn = document.getElementById("login-btn");
-  const email = emailInput?.value?.trim();
+  const email = emailInput?.value?.trim() ?? "";
   if (!email) {
-    if (loginStatus()) loginStatus().textContent = "Enter your email.";
+    setLoginStatus("Enter your email.");
     return;
   }
-  if (loginBtn) loginBtn.disabled = true;
-  if (loginStatus()) loginStatus().textContent = "Check your email for the code…";
+  if (emailInput) emailInput.value = email;
+
   try {
-    await initMagic();
-    await magic.auth.loginWithEmailOTP({ email, showUI: true });
-    closeLoginModal(true);
-    enterApp();
+    await sendOtpToEmail(email);
   } catch (err) {
-    if (loginStatus()) loginStatus().textContent = `Sign in failed: ${err.message}`;
-  } finally {
-    if (loginBtn) loginBtn.disabled = false;
+    if (otpCancelled) return;
+    setLoginStatus(`Sign in failed: ${err.message}`);
+    setLoginControlsDisabled(false);
+  }
+}
+
+function verifyOtp() {
+  const otp = document.getElementById("otp")?.value?.trim();
+  if (!otp) {
+    setLoginStatus("Enter the code from your email.");
+    return;
+  }
+  if (!otpHandle) {
+    setLoginStatus("Session expired. Go back and try again.");
+    return;
+  }
+  setLoginControlsDisabled(true);
+  setLoginStatus("");
+  otpHandle.emit("verify-email-otp", otp);
+}
+
+function backToEmailStep() {
+  cancelEmailOtpFlow();
+  otpCancelled = false;
+  setLoginStep("email");
+  setLoginStatus("");
+  const emailInput = document.getElementById("email");
+  if (emailInput && pendingEmail) emailInput.value = pendingEmail;
+  setLoginControlsDisabled(false);
+}
+
+async function resendOtp() {
+  if (!pendingEmail) {
+    backToEmailStep();
+    return;
+  }
+  try {
+    await sendOtpToEmail(pendingEmail, { resend: true });
+  } catch (err) {
+    if (otpCancelled) return;
+    setLoginStatus(`Could not resend code: ${err.message}`);
+    setLoginControlsDisabled(false);
   }
 }
 
@@ -123,13 +283,13 @@ async function loginWithGoogle() {
     await initMagic();
     const budget = sessionStorage.getItem(LAUNCH_BUDGET_KEY) || pickLaunchBudget();
     sessionStorage.setItem(LAUNCH_BUDGET_KEY, budget);
-    if (loginStatus()) loginStatus().textContent = "Redirecting to Google…";
+    setLoginStatus("Redirecting to Google…");
     await magic.oauth2.loginWithRedirect({
       provider: "google",
       redirectURI: oauthRedirectUri(),
     });
   } catch (err) {
-    if (loginStatus()) loginStatus().textContent = `Google sign in failed: ${err.message}`;
+    setLoginStatus(`Google sign in failed: ${err.message}`);
     if (googleBtn) googleBtn.disabled = false;
   }
 }
@@ -152,6 +312,15 @@ export async function initLandingAuth() {
 
   document.getElementById("login-btn")?.addEventListener("click", loginWithEmail);
   document.getElementById("google-login-btn")?.addEventListener("click", loginWithGoogle);
+  document.getElementById("otp-verify-btn")?.addEventListener("click", verifyOtp);
+  document.getElementById("otp-resend-btn")?.addEventListener("click", resendOtp);
+  document.getElementById("otp-back-btn")?.addEventListener("click", backToEmailStep);
+  document.getElementById("otp")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      verifyOtp();
+    }
+  });
   document.getElementById("login-modal-close")?.addEventListener("click", () => closeLoginModal(false));
   loginModal()?.addEventListener("cancel", (ev) => {
     ev.preventDefault();

@@ -16,6 +16,7 @@ import {
   shortAddr,
 } from "./js/utils.js";
 import { fetchBalance, renderBalanceHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
+import { closeDialogsBeforeMagicUi } from "./js/magic-ui.js";
 import {
   fetchHistory,
   fetchRun,
@@ -1318,9 +1319,7 @@ document.addEventListener("click", async (ev) => {
 
 document.getElementById("magic-wallet-ui-btn")?.addEventListener("click", async () => {
   // Kept only if a future screen re-adds #magic-wallet-ui-btn.
-  // Native <dialog> top-layer always covers Magic's iframe — never open showUI from inside fund-modal.
-  const fundModal = document.getElementById("fund-modal");
-  if (fundModal?.open) fundModal.close();
+  closeDialogsBeforeMagicUi();
   try {
     if (!magic) await initMagic();
     await magic.wallet.showUI();
