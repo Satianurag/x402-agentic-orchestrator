@@ -122,7 +122,7 @@ export async function createPlan(goal: string, options: CreatePlanOptions = {}):
   const probedMap = new Map(probedCatalog.map((t) => [t.mcpToolName, t]));
   const mergedCatalog = catalog.map((t) => probedMap.get(t.mcpToolName) ?? t);
 
-  const researchSteps = planner.selectedTools.map((pick) => mcpStepFromPick(pick, mergedCatalog));
+  const paidToolSteps = planner.selectedTools.map((pick) => mcpStepFromPick(pick, mergedCatalog));
 
   // Local Gemini compose — platform cost, $0 on user x402 ledger.
   const composeStep: PlanStep = {
@@ -134,8 +134,8 @@ export async function createPlan(goal: string, options: CreatePlanOptions = {}):
     why: "Our LLM formats paid tool results — not charged to your USDC budget.",
   };
 
-  const steps = [...researchSteps, composeStep];
-  const totalEstUsdc = researchSteps.reduce((sum, s) => sum + s.estCostUsdc, 0);
+  const steps = [...paidToolSteps, composeStep];
+  const totalEstUsdc = paidToolSteps.reduce((sum, s) => sum + s.estCostUsdc, 0);
 
   return {
     goal: trimmed,

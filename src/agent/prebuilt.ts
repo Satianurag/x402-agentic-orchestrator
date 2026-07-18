@@ -8,10 +8,10 @@ export interface PrebuiltAgent {
 
 export const PREBUILT_AGENTS: PrebuiltAgent[] = [
   {
-    id: "market-research",
-    name: "Market Research",
+    id: "market-brief",
+    name: "Market Brief",
     description: "Web search + live crypto prices + synthesis",
-    goal: "Research the latest market trends for Bitcoin and Ethereum with cited sources",
+    goal: "Summarize the latest market trends for Bitcoin and Ethereum with cited sources",
     suggestedBudget: 0.1,
   },
   {

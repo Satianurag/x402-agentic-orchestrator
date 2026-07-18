@@ -43,6 +43,23 @@ import {
   RETURN_PATH_KEY,
 } from "./js/router.js";
 
+const APP_BRAND = "x402 // Orchestrator";
+
+const VIEW_TAB_LABELS = {
+  dashboard: "Home",
+  home: "New task",
+  running: "Running",
+  result: "Output",
+  history: "History",
+  analytics: "Billing",
+  settings: "Settings",
+};
+
+function setDocumentTitle(view) {
+  const label = VIEW_TAB_LABELS[view];
+  document.title = label ? `${label} · ${APP_BRAND}` : APP_BRAND;
+}
+
 const views = {
   dashboard: document.getElementById("view-dashboard"),
   home: document.getElementById("view-home"),
@@ -223,7 +240,7 @@ function showView(name, { updateUrl = true, historyMode = "push", runId = null }
     redirectUnauthorized();
     return;
   }
-  document.title = "Research Agent";
+  setDocumentTitle(name);
   currentView = name;
   for (const [key, el] of Object.entries(views)) {
     if (!el) continue;
@@ -288,7 +305,7 @@ async function applyRoute(route, { fromPopstate = false } = {}) {
         return;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        showToast(`Could not load report: ${message}`, { type: "error" });
+        showToast(`Could not load output: ${message}`, { type: "error" });
         view = "history";
         runId = null;
       }
@@ -300,7 +317,7 @@ async function applyRoute(route, { fromPopstate = false } = {}) {
       });
       return;
     } else {
-      showToast("Report not available — open it from History.", { type: "info" });
+      showToast("Output not available — open it from History.", { type: "info" });
       view = DEFAULT_ENTRY_VIEW;
       runId = null;
     }
@@ -683,7 +700,7 @@ function wireHistoryButtons(container) {
           renderResult: (result) => renderResult(result, { runId: run.id }),
         });
       } catch (err) {
-        showToast(err?.message ?? "Could not open report", { type: "error" });
+        showToast(err?.message ?? "Could not open output", { type: "error" });
       }
     });
   });
@@ -1396,9 +1413,9 @@ downloadPdfBtn?.addEventListener("click", async () => {
 
 shareSummaryBtn?.addEventListener("click", async () => {
   if (!lastResult) return;
-  const summary = `Research Agent\nTotal: ${formatUsdc(lastResult.totalUsdc)}\n\n${lastResult.deliverable.slice(0, 500)}…`;
+  const summary = `${APP_BRAND}\nTotal: ${formatUsdc(lastResult.totalUsdc)}\n\n${lastResult.deliverable.slice(0, 500)}…`;
   if (navigator.share) {
-    await navigator.share({ title: "Research report", text: summary });
+    await navigator.share({ title: "Agent output", text: summary });
   } else {
     await navigator.clipboard.writeText(summary);
     shareSummaryBtn.textContent = "Copied!";

@@ -20,7 +20,7 @@ const COMMODITY_PATTERNS: Array<{ pattern: RegExp; reason: string; suggestion: s
   {
     pattern: /^what is x402\??$/i,
     reason: "Single-definition questions are better answered directly, not via a paid multi-tool run.",
-    suggestion: "Try: “Research how x402 enables agent payments with primary sources and cost breakdown”.",
+    suggestion: "Try: “Explain how x402 enables agent payments with primary sources and cost breakdown”.",
   },
 ];
 

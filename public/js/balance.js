@@ -74,7 +74,7 @@ export function renderBalanceHtml(balances) {
             : `<span class="empty-hint">${escapeHtml(balances.uaError ?? "Unavailable")}</span>`
         }</strong></li>
         <li><span>Spend wallet (Base)</span><strong>${formatUsdc(balances.baseUsdc)}</strong></li>
-        <li><span>Report wallet (Arbitrum)</span><strong>${formatUsdc(balances.arbitrumUsdc)}</strong></li>
+        <li><span>Settlement wallet (Arbitrum)</span><strong>${formatUsdc(balances.arbitrumUsdc)}</strong></li>
       </ul>
       <p class="balance-addr">${shortAddr(deposit)}</p>
     </details>

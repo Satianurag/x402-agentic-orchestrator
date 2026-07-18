@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const FOLLOW_UP_SYSTEM =
-  "You are a research assistant answering follow-up questions about a completed agent run. " +
+  "You are an agent assistant answering follow-up questions about a completed agent run. " +
   "Use only the provided goal, deliverable, tool context, and spend summary. " +
   "If the answer is not in the context, say so clearly — do not invent paid tool results. " +
   "Be concise, cite sources from the context when available, and use markdown.";
