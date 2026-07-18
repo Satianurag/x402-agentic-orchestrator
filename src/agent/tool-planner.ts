@@ -4,12 +4,18 @@ import type { CatalogTool } from "./tool-catalog.js";
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const PLANNER_SYSTEM =
-  "You are an expert x402 Bazaar tool planner for an autonomous agent. " +
-  "Given a user goal and a catalog of paid MCP tools (each invoked via proxy_tool_call), " +
-  "select the MINIMUM set of tools that fulfill the goal. Prefer lower cost when capability is comparable. " +
-  "Consider payer count and call volume as quality signals. " +
-  "If the user manually selected tools, validate whether each can fulfill the goal; warn when mismatched and suggest better alternatives from the catalog. " +
-  "proxyParameters must match each tool's inputSchema (use parameters.body or parameters as documented). " +
+  "You are an expert x402 Bazaar tool planner for a cost-sensitive autonomous agent. " +
+  "Paid tools cost real USDC; our local LLM compose is FREE and must NOT be replaced by buying LLM-written briefs/reports. " +
+  "Select the MINIMUM set of PRIMARY-SOURCE tools (live prices, news with URLs, raw APIs) that fulfill live-data needs. " +
+  "Do NOT select tools described as LLM-written briefings/reports/'one call the whole market' — we compose locally. " +
+  "If the goal asks for multiple assets (e.g. BTC+ETH+SOL prices), pick tools that cover EACH asset — never BTC-only for a multi-asset goal. " +
+  "Prefer lower cost when capability is comparable. Prefer higher unique payer counts; avoid 0–1 payer tools when better options exist. " +
+  "Prefer curated tools when marked. " +
+  "Avoid low-level dispatcher endpoints that require an internal `tool` enum unless the user explicitly asks for that metric. " +
+  "If the user manually selected tools, validate whether each can fulfill the goal; warn when mismatched and suggest better alternatives. " +
+  "proxyParameters must match the tool's wire format: " +
+  "GET tools → { query: { ...queryParams } }; POST tools → { body: { ...jsonBody } }. " +
+  "Use exampleInput from the catalog as the shape template and fill values for the goal. " +
   "Never invent tool names — only use mcpToolName values from the catalog.";
 
 export interface PlannerWarning {
@@ -81,11 +87,24 @@ function formatCatalogForLlm(catalog: CatalogTool[]): string {
       const priceStr = price != null ? `$${price.toFixed(6)}` : "unknown";
       const quality =
         t.payers30d != null ? ` | ${t.payers30d} payers / ${t.calls30d ?? "?"} calls (30d)` : "";
+      const curated = t.curated ? " | curated" : "";
+      const method = t.httpMethod ? ` | ${t.httpMethod}` : "";
+      const example = t.exampleInput
+        ? `\n   exampleInput: ${JSON.stringify(t.exampleInput)}`
+        : "";
+      const shape =
+        t.httpMethod === "GET"
+          ? "\n   proxyParameters shape: { \"query\": { ... } }"
+          : t.httpMethod === "POST"
+            ? "\n   proxyParameters shape: { \"body\": { ... } }"
+            : "";
       return (
         `${i + 1}. mcpToolName: ${t.mcpToolName}\n` +
         `   displayName: ${t.displayName}\n` +
-        `   price: ${priceStr}${quality}\n` +
-        `   description: ${t.description.slice(0, 280)}`
+        `   price: ${priceStr}${quality}${curated}${method}\n` +
+        `   description: ${t.description.slice(0, 280)}` +
+        example +
+        shape
       );
     })
     .join("\n\n");

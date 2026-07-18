@@ -30,9 +30,11 @@ export async function createRunEstimate(
   validateGoal(trimmed);
 
   const plan = await createPlan(trimmed, { userToolPicks: options.userToolPicks });
-  // Cap = estimate + 25%, rounded up to 1¢. No artificial $0.05 floor —
-  // that forced low-balance testers to lock 16× a $0.003 run before spend.
-  const suggestedBudget = Math.max(Math.ceil(plan.totalEstUsdc * 1.25 * 100) / 100, 0.01);
+  // Cap = estimate + 25%, rounded up to 1¢, hard-capped at $0.10 for probe runs.
+  const suggestedBudget = Math.min(
+    0.1,
+    Math.max(Math.ceil(plan.totalEstUsdc * 1.25 * 100) / 100, 0.01),
+  );
 
   return {
     goal: trimmed,

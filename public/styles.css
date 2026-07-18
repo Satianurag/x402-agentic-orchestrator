@@ -1144,6 +1144,12 @@ legend {
   font-family: var(--font-mono);
 }
 
+.plan-step-included {
+  color: #6b7280;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .plan-step-row--total {
   font-weight: 800;
   background: var(--lime);

@@ -14,6 +14,11 @@ export interface CatalogTool {
   calls30d: number | null;
   inputSchema?: Record<string, unknown>;
   httpResource: string | null;
+  /** HTTP method from Bazaar extension (GET/POST). */
+  httpMethod: "GET" | "POST" | null;
+  /** Example body/query from Bazaar discovery extension. */
+  exampleInput: Record<string, unknown> | null;
+  curated: boolean;
 }
 
 type McpToolRaw = {
@@ -23,6 +28,18 @@ type McpToolRaw = {
   _meta?: {
     "x402/payment-required"?: {
       accepts?: Array<{ amount?: string; network?: string }>;
+      extensions?: {
+        bazaar?: {
+          info?: {
+            input?: {
+              type?: string;
+              method?: string;
+              body?: Record<string, unknown>;
+              queryParams?: Record<string, unknown>;
+            };
+          };
+        };
+      };
     };
     "x402/guidance"?: { costObservedUsd?: string };
     "x402/curation"?: { curated?: boolean };
@@ -70,6 +87,22 @@ function httpResourceFromName(name: string): string | null {
   return `https://${path}`;
 }
 
+function httpMethodFromTool(tool: McpToolRaw): "GET" | "POST" | null {
+  const method = tool._meta?.["x402/payment-required"]?.extensions?.bazaar?.info?.input?.method;
+  if (method === "GET" || method === "POST") return method;
+  if (tool.name?.startsWith("x402_get_")) return "GET";
+  if (tool.name?.startsWith("x402_post_")) return "POST";
+  return null;
+}
+
+function exampleInputFromTool(tool: McpToolRaw): Record<string, unknown> | null {
+  const input = tool._meta?.["x402/payment-required"]?.extensions?.bazaar?.info?.input;
+  if (!input) return null;
+  if (input.body && typeof input.body === "object") return input.body;
+  if (input.queryParams && typeof input.queryParams === "object") return input.queryParams;
+  return null;
+}
+
 /** Parse full MCP `search_resources` payload into catalog tools. */
 export function parseMcpCatalogTools(result: unknown): CatalogTool[] {
   const content = (result as { content?: Array<{ text?: string }> })?.content;
@@ -94,6 +127,9 @@ export function parseMcpCatalogTools(result: unknown): CatalogTool[] {
           calls30d: quality.calls,
           inputSchema: t.inputSchema,
           httpResource: httpResourceFromName(t.name),
+          httpMethod: httpMethodFromTool(t),
+          exampleInput: exampleInputFromTool(t),
+          curated: Boolean(t._meta?.["x402/curation"]?.curated),
         };
       });
   } catch {
@@ -139,7 +175,14 @@ export async function discoverToolCatalog(goal: string, limit = 24): Promise<Cat
   const seen = new Set<string>();
   const out: CatalogTool[] = [];
 
-  for (const t of tools) {
+  // Prefer curated + higher unique payers first so the planner sees better options.
+  const ranked = [...tools].sort((a, b) => {
+    const cur = Number(b.curated) - Number(a.curated);
+    if (cur !== 0) return cur;
+    return (b.payers30d ?? -1) - (a.payers30d ?? -1);
+  });
+
+  for (const t of ranked) {
     if (seen.has(t.mcpToolName)) continue;
     seen.add(t.mcpToolName);
     out.push(t);

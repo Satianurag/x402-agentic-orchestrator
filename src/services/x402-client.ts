@@ -29,6 +29,28 @@ export interface PaymentResult {
   data: unknown;
 }
 
+/**
+ * Spend amount for a settled payment (exact scheme).
+ *
+ * `SettleResponse.amount` is optional — mainly for `upto` where charge can differ from the
+ * authorized max. Official x402 lifecycle hooks record `requirements.amount` (same as
+ * `paymentPayload.accepted.amount`), not settle.amount.
+ *
+ * @see SettleResponse.amount JSDoc in @x402/core
+ * @see https://github.com/coinbase/x402/blob/main/docs/advanced-concepts/lifecycle-hooks.mdx
+ */
+export function settledSpendUsdc(
+  settleAmount: string | undefined,
+  authorizedAmountAtomic: string | undefined,
+): number {
+  const raw =
+    settleAmount != null && settleAmount !== ""
+      ? settleAmount
+      : authorizedAmountAtomic;
+  if (raw == null || raw === "") return 0;
+  return atomicToUsdc(raw);
+}
+
 function paymentHeader(res: Response, name: string): string | null {
   return res.headers.get(name) ?? res.headers.get(name.toUpperCase());
 }
@@ -70,7 +92,7 @@ export function createX402PaymentClient(budgetGuard?: BudgetGuard) {
   if (budgetGuard) {
     client.onBeforePaymentCreation(async (ctx) => {
       const quoteUsdc = atomicToUsdc(ctx.selectedRequirements.amount);
-      await budgetGuard.preCheck(quoteUsdc);
+      await budgetGuard.preCheck(quoteUsdc, ctx.selectedRequirements.network);
     });
   }
 
@@ -79,21 +101,28 @@ export function createX402PaymentClient(budgetGuard?: BudgetGuard) {
 
 export function createX402Fetch(budgetGuard?: BudgetGuard) {
   const client = createX402PaymentClient(budgetGuard);
+  /** Signed exact-scheme amount from PaymentPayload.accepted (requirements.amount). */
+  let authorizedAmountAtomic: string | undefined;
+  client.onAfterPaymentCreation(async (ctx) => {
+    authorizedAmountAtomic = ctx.paymentPayload.accepted.amount;
+  });
 
   return {
     paidFetch: wrapFetchWithPayment(fetch, client),
     httpClient: new x402HTTPClient(client),
+    getAuthorizedAmountAtomic: () => authorizedAmountAtomic,
   };
 }
 
 function extractSettlement(
   response: Response,
   httpClient: x402HTTPClient,
+  authorizedAmountAtomic?: string,
 ): { usdc: number; txHash: string; network: string } {
   const settle = httpClient.getPaymentSettleResponse((name) => paymentHeader(response, name));
   if (settle?.success && settle.transaction) {
     return {
-      usdc: atomicToUsdc(settle.amount ?? "0"),
+      usdc: settledSpendUsdc(settle.amount, authorizedAmountAtomic),
       txHash: settle.transaction,
       network: settle.network,
     };
@@ -110,7 +139,7 @@ function extractSettlement(
   }
 
   return {
-    usdc: atomicToUsdc(decoded.amount ?? "0"),
+    usdc: settledSpendUsdc(decoded.amount, authorizedAmountAtomic),
     txHash: decoded.transaction,
     network: decoded.network,
   };
@@ -122,15 +151,26 @@ export async function paidRequest(
   budgetGuard: BudgetGuard,
   serviceName: string,
 ): Promise<PaymentResult> {
-  const { paidFetch, httpClient } = createX402Fetch(budgetGuard);
+  const { paidFetch, httpClient, getAuthorizedAmountAtomic } = createX402Fetch(budgetGuard);
   const response = await paidFetch(url, init);
+
+  if (response.status === 402) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `${serviceName} payment rejected (402): ${text || "empty body — check Base USDC balance / signature"}`,
+    );
+  }
 
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`${serviceName} failed (${response.status}): ${text}`);
   }
 
-  const { usdc, txHash, network } = extractSettlement(response, httpClient);
+  const { usdc, txHash, network } = extractSettlement(
+    response,
+    httpClient,
+    getAuthorizedAmountAtomic(),
+  );
   budgetGuard.recordSpend(usdc);
 
   const data = await response.json();
