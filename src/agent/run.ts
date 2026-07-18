@@ -1,4 +1,5 @@
 import { fundRunWallet, type BudgetGuard } from "../budget/guard.js";
+import { waitForPlanApproval } from "./run-controller.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
 import { tavilySearch } from "../services/tavily.js";
 import { coingeckoPrice } from "../services/coingecko.js";
@@ -30,6 +31,7 @@ export interface RunResult {
 
 export type RunEvent =
   | { type: "plan"; plan: AgentPlan }
+  | { type: "plan_approval_required"; runId: string; plan: AgentPlan; budgetUsdc: number }
   | { type: "ua_topup"; transactionId: string; amountUsdc: number }
   | { type: "step_start"; step: PlanStep; index: number }
   | { type: "payment"; line: SpendLine; remaining: number }
@@ -43,6 +45,8 @@ export interface RunOptions {
   budgetUsdc: number;
   didToken?: string;
   requireMagic?: boolean;
+  requirePlanApproval?: boolean;
+  runId?: string;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
 }
@@ -79,7 +83,8 @@ async function executeStep(
 }
 
 async function runAgentInner(options: RunOptions): Promise<RunResult> {
-  const { goal, budgetUsdc, onEvent, signal } = options;
+  const { goal, onEvent, signal, requirePlanApproval = false, runId } = options;
+  let budgetUsdc = options.budgetUsdc;
   abortController = new AbortController();
   const mergedSignal = signal ?? abortController.signal;
 
@@ -90,6 +95,18 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
     throw new Error(
       `Plan estimate $${plan.totalEstUsdc.toFixed(4)} exceeds budget $${budgetUsdc.toFixed(4)} USDC`,
     );
+  }
+
+  if (requirePlanApproval && runId) {
+    onEvent?.({ type: "plan_approval_required", runId, plan, budgetUsdc });
+    const approval = await waitForPlanApproval(runId, budgetUsdc);
+    if (!approval.approved) throw new Error("Run cancelled — plan not approved");
+    budgetUsdc = approval.budgetUsdc;
+    if (plan.totalEstUsdc > budgetUsdc) {
+      throw new Error(
+        `Plan estimate $${plan.totalEstUsdc.toFixed(4)} exceeds approved budget $${budgetUsdc.toFixed(4)} USDC`,
+      );
+    }
   }
 
   const guard = await fundRunWallet(budgetUsdc);
