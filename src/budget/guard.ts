@@ -51,6 +51,18 @@ export class BudgetGuard {
     }
 
     const uaAmountUsdc = atomicToUsdc(this.capAtomic - current);
+    const uaBalance = await ua.getUnifiedUsdcBalance();
+    if (uaBalance < uaAmountUsdc) {
+      throw new Error(
+        `Universal Account unified USDC $${uaBalance.toFixed(6)} < needed top-up $${uaAmountUsdc.toFixed(6)}. ` +
+          `EOA Base balance is $${atomicToUsdc(current).toFixed(6)}; run cap is $${this.capUsdc.toFixed(6)}.`,
+      );
+    }
+
+    console.log(
+      `[budget] EOA Base USDC ${atomicToUsdc(current).toFixed(6)} < cap ${this.capUsdc.toFixed(6)} — ` +
+        `firing UA cross-chain 7702 top-up of $${uaAmountUsdc.toFixed(6)}`,
+    );
     const result = await ua.crossChainTopUpEoa(uaAmountUsdc.toFixed(6));
     this.uaTopUp = { transactionId: result.transactionId, amountUsdc: uaAmountUsdc };
 

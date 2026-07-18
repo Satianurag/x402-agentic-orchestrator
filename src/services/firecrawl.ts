@@ -1,6 +1,12 @@
 import { paidRequest, probeQuote, type ProbeQuote } from "./x402-client.js";
 import { requireServiceBaseUrl, SERVICE_BASE_URLS } from "../config/chains.js";
 
+/** Firecrawl has no documented live x402 endpoint — opt in via ENABLE_FIRECRAWL=1. */
+export function isFirecrawlEnabled(): boolean {
+  const raw = process.env.ENABLE_FIRECRAWL?.toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 function firecrawlBase(): string {
   return requireServiceBaseUrl("FIRECRAWL_BASE_URL", SERVICE_BASE_URLS.FIRECRAWL);
 }

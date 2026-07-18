@@ -1,10 +1,10 @@
 import { type Hex } from "viem";
-import { Signature } from "ethers";
 import { getRunEoaAccountFromKey } from "./eoa.js";
 import {
   requestDelegatedSignAuthorization,
   requestDelegatedSignMessage,
 } from "./sign-bridge.js";
+import { serializeAuthorizationSignature } from "./authorization-signature.js";
 
 export interface RunSigner {
   readonly mode: "cli" | "ui";
@@ -15,13 +15,6 @@ export interface RunSigner {
     chainId: number;
     nonce: number;
   }) => Promise<string>;
-}
-
-async function serializeViemAuthorization(
-  signed: Awaited<ReturnType<ReturnType<typeof getRunEoaAccountFromKey>["signAuthorization"]>>,
-): Promise<string> {
-  const yParity = (signed.yParity ?? Number(signed.v ?? 0)) as 0 | 1;
-  return Signature.from({ r: signed.r, s: signed.s, yParity }).serialized;
 }
 
 export function createCliSigner(privateKey: Hex): RunSigner {
@@ -36,7 +29,7 @@ export function createCliSigner(privateKey: Hex): RunSigner {
         chainId: auth.chainId,
         nonce: auth.nonce,
       });
-      return serializeViemAuthorization(signed);
+      return serializeAuthorizationSignature(signed);
     },
   };
 }

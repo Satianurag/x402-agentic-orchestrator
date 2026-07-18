@@ -176,8 +176,8 @@ app.get("/app", (_req, res) => {
 
 app.use(express.static(publicDir));
 
-app.listen(PORT, () => {
-  console.log(`x402 Agentic Orchestrator listening on http://localhost:${PORT}`);
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`x402 Agentic Orchestrator listening on http://127.0.0.1:${PORT}`);
   console.log(`  Seller network: ${getNetworkMode()} (${network})`);
   console.log(`  Payments: ${getNetworkMode() === "mainnet" ? "Base mainnet" : "Base Sepolia (via service URLs)"}`);
   console.log(`  UI: http://localhost:${PORT}/`);

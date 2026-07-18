@@ -1,6 +1,6 @@
 import { tavilyEstimateCost } from "../services/tavily.js";
 import { coingeckoEstimateCost } from "../services/coingecko.js";
-import { firecrawlEstimateCost } from "../services/firecrawl.js";
+import { firecrawlEstimateCost, isFirecrawlEnabled } from "../services/firecrawl.js";
 import { browserbaseEstimateCost } from "../services/browserbase.js";
 import { exaEstimateCost } from "../services/exa.js";
 import { synthesizeEstimateCost } from "../services/seller.js";
@@ -39,7 +39,10 @@ function selectServices(goal: string): ServiceName[] {
   ) {
     services.add("coingecko");
   }
-  if (matchesAny(goal, ["crawl", "scrape", "monitor", "site", "web page"])) {
+  if (
+    isFirecrawlEnabled() &&
+    matchesAny(goal, ["crawl", "scrape", "monitor", "site", "web page"])
+  ) {
     services.add("firecrawl");
   }
   if (matchesAny(goal, ["browse", "browser", "session", "screenshot", "interact"])) {
