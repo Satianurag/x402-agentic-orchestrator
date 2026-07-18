@@ -21,6 +21,15 @@ const ERC20_BALANCE_ABI = [
   },
 ] as const;
 
+function isRateLimitError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /over rate limit|429|too many requests|rate limit/i.test(msg);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
 async function readUsdcBalance(
   address: `0x${string}`,
   chain: Chain,
@@ -28,13 +37,23 @@ async function readUsdcBalance(
   usdcAddress: `0x${string}`,
 ): Promise<number> {
   const client = createPublicClient({ chain, transport: http(rpcUrl) });
-  const raw = await client.readContract({
-    address: usdcAddress,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: [address],
-  });
-  return atomicToUsdc(raw);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const raw = await client.readContract({
+        address: usdcAddress,
+        abi: ERC20_BALANCE_ABI,
+        functionName: "balanceOf",
+        args: [address],
+      });
+      return atomicToUsdc(raw);
+    } catch (err) {
+      lastErr = err;
+      if (!isRateLimitError(err) || attempt === 3) break;
+      await sleep(400 * 2 ** attempt);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 export interface WalletBalances {

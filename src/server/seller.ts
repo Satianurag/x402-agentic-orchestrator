@@ -7,10 +7,11 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import {
   createSellerFacilitatorClient,
-  getBaseRpcUrl,
+  getMagicRpcUrl,
   getNetworkMode,
   getPaymentCaip2,
   getPaymentChain,
+  warnIfPublicBaseRpc,
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
 import { synthesizeWithLlm } from "../agent/synthesize-llm.js";
@@ -128,7 +129,8 @@ app.get("/api/config", (_req, res) => {
     network: getNetworkMode(),
     sellerNetwork: network,
     magicNetwork: {
-      rpcUrl: getBaseRpcUrl(),
+      // Public RPC only — never leak BASE_RPC_URL provider keys to the browser.
+      rpcUrl: getMagicRpcUrl(),
       chainId: paymentChain.id,
     },
   });
@@ -213,11 +215,21 @@ app.post("/api/follow-up", async (req, res) => {
   }
 });
 
+const BALANCE_CACHE_TTL_MS = 15_000;
+const balanceCache = new Map<string, { at: number; body: unknown }>();
+
 app.post("/api/balance", async (req, res) => {
   try {
     const { didToken } = req.body as { didToken?: string };
     const session = await resolveRunSession(didToken, true);
+    const key = session.eoaAddress.toLowerCase();
+    const hit = balanceCache.get(key);
+    if (hit && Date.now() - hit.at < BALANCE_CACHE_TTL_MS) {
+      res.json(hit.body);
+      return;
+    }
     const balances = await getWalletBalances(session.eoaAddress, session.signer);
+    balanceCache.set(key, { at: Date.now(), body: balances });
     res.json(balances);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
@@ -529,6 +541,7 @@ app.use(express.static(publicDir));
 
 app.listen(PORT, process.env.HOST ?? "0.0.0.0", () => {
   const host = process.env.HOST ?? "0.0.0.0";
+  warnIfPublicBaseRpc();
   console.log(`x402 Agentic Orchestrator listening on http://${host}:${PORT}`);
   console.log(`  (Magic login: use localhost — not 127.0.0.1 — unless allowlisted in Magic Dashboard)`);
   console.log(`  Seller network: ${getNetworkMode()} (${network})`);
