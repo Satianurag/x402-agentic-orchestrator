@@ -18,11 +18,11 @@
   <div class="paper-bg paper-bg--soft" aria-hidden="true"></div>
 
   <header class="app-header app-header--product">
-    <p class="app-back"><a href="/">← Home</a></p>
+    <p class="app-back" id="app-back-link"><a href="/">← Site</a></p>
     <div class="app-header-inner">
       <div>
         <h1>Research Agent</h1>
-        <p class="app-tagline">Describe a goal. Get a live price. Receive a finished report.</p>
+        <p class="app-tagline" id="app-tagline">Sign in to plan a task, see the price, then run it.</p>
       </div>
     </div>
     <nav id="app-nav" class="app-nav" hidden aria-label="Main navigation">
@@ -61,7 +61,11 @@
       <div id="dashboard-empty" class="empty-state" hidden>
         <h2>Welcome — run your first task</h2>
         <p>Pick a template or describe what you need. You will see the price before anything runs.</p>
-        <button type="button" class="btn btn-primary" data-goto="home">Start a task →</button>
+        <div class="empty-state-actions">
+          <button type="button" class="btn btn-primary" data-goto="home">Start a task →</button>
+          <button type="button" class="btn btn-secondary" id="empty-fund-btn" data-action="add-funds">Add funds</button>
+        </div>
+        <div id="empty-balance-details" class="balance-details empty-balance-details"></div>
       </div>
 
       <div id="dashboard-content" hidden>
@@ -324,6 +328,15 @@
         <h2>Settings</h2>
 
         <div class="settings-group">
+          <h3>Wallet &amp; deposits</h3>
+          <p class="field-note">Copy your deposit address, send USDC on Base, then refresh. That is the funding path for runs.</p>
+          <div id="settings-wallet-panel" class="settings-wallet-panel">
+            <p class="empty-hint">Loading wallet…</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="settings-fund-btn" data-action="add-funds">Add funds</button>
+        </div>
+
+        <div class="settings-group">
           <label for="settings-default-budget">Default run limit</label>
           <input id="settings-default-budget" type="number" min="0.01" step="0.01" value="0.15" />
           <p class="field-note">Used when a template does not include a price. Each run uses the estimate when available.</p>
@@ -364,18 +377,18 @@
   <dialog id="fund-modal" class="fund-modal">
     <form method="dialog" class="fund-modal-inner">
       <h2>Add funds</h2>
-      <p class="hint">Add credit to your account so runs can complete. Contact support or use your deposit address below.</p>
+      <p class="hint">Send USDC to this address. After it confirms, tap Refresh on the app — your credit updates.</p>
       <div class="fund-address-block">
-        <label>Your deposit address</label>
+        <label id="fund-address-label">Deposit address</label>
         <code id="fund-address" class="fund-address"></code>
-        <button type="button" id="copy-fund-address" class="btn btn-secondary btn-sm">Copy</button>
+        <button type="button" id="copy-fund-address" class="btn btn-secondary btn-sm">Copy address</button>
       </div>
       <div id="fund-qr" class="fund-qr" aria-label="QR code for deposit address"></div>
       <details class="fund-advanced">
-        <summary>Deposit details</summary>
-        <ul class="fund-guidance">
-          <li>Send USDC on Base to the address above.</li>
-          <li>Funds appear in your available credit after confirmation.</li>
+        <summary>How to deposit</summary>
+        <ul id="fund-guidance" class="fund-guidance">
+          <li>Send <strong>USDC on Base</strong> to the address above.</li>
+          <li>Funds appear in Available credit after confirmation.</li>
         </ul>
       </details>
       <button type="submit" class="btn btn-primary">Done</button>

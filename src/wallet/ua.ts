@@ -42,6 +42,39 @@ export async function verifyMagicDidToken(didToken: string): Promise<string> {
   return address;
 }
 
+export function humanizeUaError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Live probe via official UniversalAccount.getSmartAccountOptions(). */
+export async function probeParticleUa(ownerAddress: string): Promise<{ ok: boolean; detail: string }> {
+  if (!process.env.PARTICLE_PROJECT_ID || !process.env.PARTICLE_CLIENT_KEY || !process.env.PARTICLE_APP_ID) {
+    return { ok: false, detail: "Missing PARTICLE_* credentials" };
+  }
+  try {
+    const ua = new UniversalAccount({
+      projectId: process.env.PARTICLE_PROJECT_ID,
+      projectClientKey: process.env.PARTICLE_CLIENT_KEY,
+      projectAppUuid: process.env.PARTICLE_APP_ID,
+      // SDK 2.0.3: top-level ownerAddress removed — use smartAccountOptions.
+      smartAccountOptions: {
+        // SDK 2.0.3 default account name is UNIVERSAL (not "particle").
+        // Official quickstart passes ownerAddress; 2.0.3 stores it under smartAccountOptions.
+        name: "UNIVERSAL",
+        version: "2.0.1",
+        ownerAddress,
+        useEIP7702: true,
+      },
+      ...(process.env.UNIVERSALX_RPC_URL ? { rpcUrl: process.env.UNIVERSALX_RPC_URL } : {}),
+    });
+    const opts = await ua.getSmartAccountOptions();
+    const addr = opts.smartAccountAddress ?? opts.ownerAddress;
+    return { ok: true, detail: `EIP-7702 UA ready · ${String(addr).slice(0, 6)}…${String(addr).slice(-4)}` };
+  } catch (err) {
+    return { ok: false, detail: humanizeUaError(err) };
+  }
+}
+
 export class UniversalAccountWallet {
   readonly ua: UniversalAccount;
   readonly signer: RunSigner;
@@ -54,10 +87,16 @@ export class UniversalAccountWallet {
       projectClientKey: requireEnv("PARTICLE_CLIENT_KEY"),
       projectAppUuid: requireEnv("PARTICLE_APP_ID"),
       smartAccountOptions: {
-        name: "particle",
+        // SDK 2.0.3 default: name UNIVERSAL. Docs quickstart uses top-level ownerAddress;
+        // that field was removed in 2.0.3 — pass owner via smartAccountOptions instead.
+        name: "UNIVERSAL",
         version: "2.0.1",
         ownerAddress: signer.address,
         useEIP7702: true,
+      },
+      // SDK 2.0.2 removed universalGas; keep mild slippage for routing.
+      tradeConfig: {
+        slippageBps: 100,
       },
       ...(rpcUrl ? { rpcUrl } : {}),
     });

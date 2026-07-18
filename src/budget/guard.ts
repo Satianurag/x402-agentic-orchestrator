@@ -51,11 +51,24 @@ export class BudgetGuard {
     }
 
     const uaAmountUsdc = atomicToUsdc(this.capAtomic - current);
-    const uaBalance = await ua.getUnifiedUsdcBalance();
+    const eoa = ua.signer.address;
+
+    let uaBalance: number;
+    try {
+      uaBalance = await ua.getUnifiedUsdcBalance();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Need more credit (~$${uaAmountUsdc.toFixed(2)}) before this run can start. ` +
+          `Universal Account balance unavailable (${detail}). ` +
+          `Deposit Primary Assets to your UA address, or send USDC on Base to ${eoa}.`,
+      );
+    }
+
     if (uaBalance < uaAmountUsdc) {
       throw new Error(
-        `Universal Account unified USDC $${uaBalance.toFixed(6)} < needed top-up $${uaAmountUsdc.toFixed(6)}. ` +
-          `EOA Base balance is $${atomicToUsdc(current).toFixed(6)}; run cap is $${this.capUsdc.toFixed(6)}.`,
+        `Not enough credit. Available ~$${uaBalance.toFixed(2)}, need ~$${uaAmountUsdc.toFixed(2)}. ` +
+          `Deposit USDC into your Universal Account (see Add funds), then try again.`,
       );
     }
 
@@ -63,14 +76,24 @@ export class BudgetGuard {
       `[budget] EOA Base USDC ${atomicToUsdc(current).toFixed(6)} < cap ${this.capUsdc.toFixed(6)} — ` +
         `firing UA cross-chain 7702 top-up of $${uaAmountUsdc.toFixed(6)}`,
     );
-    const result = await ua.crossChainTopUpEoa(uaAmountUsdc.toFixed(6));
+
+    let result: { transactionId: string };
+    try {
+      result = await ua.crossChainTopUpEoa(uaAmountUsdc.toFixed(6));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Could not move credit from Universal Account to your spend wallet (${detail}). ` +
+          `Send USDC on Base to ${eoa} and retry.`,
+      );
+    }
     this.uaTopUp = { transactionId: result.transactionId, amountUsdc: uaAmountUsdc };
 
     const after = await getEoaBaseUsdcBalance();
     if (after < this.capAtomic) {
       throw new Error(
-        `EOA Base USDC ${atomicToUsdc(after).toFixed(6)} < run cap ${this.capUsdc.toFixed(6)} after UA top-up. ` +
-          "Fund the Universal Account with USDC before starting a run.",
+        `Credit move finished but spend wallet is still short for this run. ` +
+          `Send USDC on Base to ${eoa} and try again.`,
       );
     }
 

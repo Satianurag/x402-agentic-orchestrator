@@ -16,7 +16,7 @@ import {
   formatUsdc,
   shortAddr,
 } from "./js/utils.js";
-import { fetchBalance, renderBalanceHtml, showFundModal, wireFundModal } from "./js/balance.js";
+import { fetchBalance, renderBalanceHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
 import {
   fetchHistory,
   fetchRun,
@@ -111,6 +111,8 @@ const fundWalletBtn = document.getElementById("fund-wallet-btn");
 const copyFundAddress = document.getElementById("copy-fund-address");
 const dashboardEmpty = document.getElementById("dashboard-empty");
 const dashboardContent = document.getElementById("dashboard-content");
+const emptyBalanceDetails = document.getElementById("empty-balance-details");
+const settingsWalletPanel = document.getElementById("settings-wallet-panel");
 const dashCumulative = document.getElementById("dash-cumulative");
 const dashRunCount = document.getElementById("dash-run-count");
 const recentRunsList = document.getElementById("recent-runs-list");
@@ -137,6 +139,7 @@ const dashWalletLabel = document.getElementById("dash-wallet-label");
 let magic = null;
 let didToken = null;
 let walletAddress = null;
+let lastBalances = null;
 let userEmail = null;
 let signingStep = null;
 let currentView = "login";
@@ -174,6 +177,12 @@ function serializeAuthorizationSignature(signed) {
 }
 
 function showView(name) {
+  const protectedViews = new Set([
+    "dashboard", "home", "running", "result", "history", "analytics", "settings",
+  ]);
+  if (protectedViews.has(name) && !didToken) {
+    name = "login";
+  }
   currentView = name;
   for (const [key, el] of Object.entries(views)) {
     if (!el) continue;
@@ -188,6 +197,16 @@ function showView(name) {
   if (name === "analytics") refreshAnalytics();
   if (name === "settings") refreshSettings();
   if (name === "home") refreshHome();
+}
+
+function openFundFlow() {
+  if (lastBalances) showFundModal(lastBalances);
+  else showFundModal(walletAddress);
+}
+
+function depositAddressNow() {
+  if (lastBalances) return pickDepositAddress(lastBalances);
+  return walletAddress;
 }
 
 function appendLog(line) {
@@ -301,7 +320,7 @@ function showRunError(message, { stopped = false } = {}) {
   runErrorMessage.textContent = message;
   if (isInsufficientFunds(message)) {
     runErrorMessage.innerHTML = `${escapeHtml(message)}<br><br><button type="button" class="btn btn-secondary btn-sm" id="error-fund-btn">Add funds</button>`;
-    document.getElementById("error-fund-btn")?.addEventListener("click", () => showFundModal(walletAddress));
+    document.getElementById("error-fund-btn")?.addEventListener("click", () => openFundFlow());
   }
   runningTitle.textContent = stopped ? "Run stopped" : "Run ended";
   runningSubtitle.textContent = stopped
@@ -365,6 +384,7 @@ function resolveWalletAddress(meta) {
 }
 
 async function loadUserSession() {
+  // Always pull a fresh DID — Magic tokens expire; caching one breaks balance/history mid-session.
   didToken = await magic.user.getIdToken();
   const meta = await magic.user.getInfo();
   walletAddress = resolveWalletAddress(meta);
@@ -374,21 +394,50 @@ async function loadUserSession() {
   walletLabel.textContent = label;
   if (dashWalletLabel) dashWalletLabel.textContent = label;
   if (appNav) appNav.hidden = false;
+  const tagline = document.getElementById("app-tagline");
+  if (tagline) tagline.hidden = true;
+  const back = document.getElementById("app-back-link");
+  if (back) back.hidden = true;
+}
+
+/** Refresh Magic DID before authenticated API calls. */
+async function ensureFreshDidToken() {
+  if (!magic) await initMagic();
+  const loggedIn = await magic.user.isLoggedIn();
+  if (!loggedIn) {
+    didToken = null;
+    throw new Error("SESSION_EXPIRED");
+  }
+  didToken = await magic.user.getIdToken();
+  return didToken;
 }
 
 async function refreshBalances(targetEl) {
-  if (!didToken || !targetEl) return;
+  if (!targetEl) return;
   targetEl.innerHTML = "<p class='empty-hint'>Loading balances…</p>";
   try {
+    await ensureFreshDidToken();
     const balances = await fetchBalance(didToken);
+    lastBalances = balances;
     targetEl.innerHTML = renderBalanceHtml(balances);
   } catch (err) {
-    targetEl.innerHTML = `<p class="empty-hint">${escapeHtml(err.message)}</p>`;
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "SESSION_EXPIRED" || isSessionExpiredError(message)) {
+      lastBalances = null;
+      targetEl.innerHTML = renderSessionExpiredHtml();
+      return;
+    }
+    targetEl.innerHTML = `<p class="empty-hint">${escapeHtml(message)}</p>`;
   }
 }
 
 async function refreshDashboard() {
-  if (!didToken) return;
+  try {
+    await ensureFreshDidToken();
+  } catch {
+    showView("login");
+    return;
+  }
   try {
     const [history, analytics] = await Promise.all([
       fetchHistory(didToken),
@@ -397,7 +446,11 @@ async function refreshDashboard() {
     const hasRuns = history.length > 0;
     dashboardEmpty.hidden = hasRuns;
     dashboardContent.hidden = !hasRuns;
-    if (!hasRuns) return;
+    if (!hasRuns) {
+      // First-time users: Add funds used to live only in dashboard-content (hidden).
+      await refreshBalances(emptyBalanceDetails);
+      return;
+    }
 
     dashCumulative.textContent = formatUsdc(analytics.cumulativeSpend);
     dashRunCount.textContent = `${analytics.totalRuns} task${analytics.totalRuns === 1 ? "" : "s"}`;
@@ -413,14 +466,24 @@ async function refreshDashboard() {
 
     await refreshBalances(balanceDetails);
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     dashboardEmpty.hidden = false;
     dashboardContent.hidden = true;
-    dashboardEmpty.querySelector("p").textContent = err.message;
+    if (isSessionExpiredError(message)) {
+      dashboardEmpty.querySelector("p").textContent = "Session expired — sign in again.";
+      return;
+    }
+    dashboardEmpty.querySelector("p").textContent = message;
   }
 }
 
 async function refreshHome() {
-  if (!didToken) return;
+  try {
+    await ensureFreshDidToken();
+  } catch {
+    showView("login");
+    return;
+  }
   const settings = loadSettings();
   if (settings.defaultBudget && budgetInput) {
     budgetInput.value = String(settings.defaultBudget);
@@ -432,7 +495,12 @@ async function refreshHome() {
 }
 
 async function refreshHistory() {
-  if (!didToken) return;
+  try {
+    await ensureFreshDidToken();
+  } catch {
+    showView("login");
+    return;
+  }
   try {
     const runs = await fetchHistory(didToken);
     const has = renderHistoryList(historyList, runs);
@@ -445,7 +513,12 @@ async function refreshHistory() {
 }
 
 async function refreshAnalytics() {
-  if (!didToken) return;
+  try {
+    await ensureFreshDidToken();
+  } catch {
+    showView("login");
+    return;
+  }
   try {
     const [analytics, ledger] = await Promise.all([
       fetchAnalytics(didToken),
@@ -467,9 +540,14 @@ async function refreshAnalytics() {
 
 async function refreshSettings() {
   const settings = loadSettings();
-  settingsDefaultBudget.value = settings.defaultBudget ?? 0.15;
+  const budget = Number(settings.defaultBudget ?? 0.15);
+  settingsDefaultBudget.value = Number.isFinite(budget) ? budget.toFixed(2) : "0.15";
   settingsTheme.value = settings.theme ?? "light";
   settingsNotifications.checked = Boolean(settings.notifications);
+
+  if (didToken && settingsWalletPanel) {
+    await refreshBalances(settingsWalletPanel);
+  }
 
   try {
     const res = await fetch("/api/health");
@@ -796,7 +874,9 @@ function renderEstimate(estimate) {
 }
 
 async function fetchEstimate() {
-  if (!didToken) {
+  try {
+    await ensureFreshDidToken();
+  } catch {
     alert("Please sign in first.");
     showView("login");
     return;
@@ -835,7 +915,9 @@ async function fetchEstimate() {
 }
 
 async function startRun() {
-  if (!didToken) {
+  try {
+    await ensureFreshDidToken();
+  } catch {
     alert("Please sign in first.");
     showView("login");
     return;
@@ -976,7 +1058,7 @@ async function restoreSession() {
     loginStatus.textContent = "";
     showView("dashboard");
     await loadAgents();
-    wireFundModal(copyFundAddress, walletAddress);
+    wireFundModal(copyFundAddress, depositAddressNow);
     return;
   }
 
@@ -988,7 +1070,7 @@ async function restoreSession() {
   await loadUserSession();
   showView("dashboard");
   await loadAgents();
-  wireFundModal(copyFundAddress, walletAddress);
+  wireFundModal(copyFundAddress, depositAddressNow);
 }
 
 loginBtn.addEventListener("click", async () => {
@@ -1006,7 +1088,7 @@ loginBtn.addEventListener("click", async () => {
     loginStatus.textContent = "";
     showView("dashboard");
     await loadAgents();
-    wireFundModal(copyFundAddress, walletAddress);
+    wireFundModal(copyFundAddress, depositAddressNow);
   } catch (err) {
     loginStatus.textContent = `Sign in failed: ${err.message}`;
   } finally {
@@ -1028,7 +1110,15 @@ async function logout() {
   if (magic) await magic.user.logout();
   didToken = null;
   walletAddress = null;
+  lastBalances = null;
   if (appNav) appNav.hidden = true;
+  const tagline = document.getElementById("app-tagline");
+  if (tagline) {
+    tagline.hidden = false;
+    tagline.textContent = "Sign in to plan a task, see the price, then run it.";
+  }
+  const back = document.getElementById("app-back-link");
+  if (back) back.hidden = false;
   showView("login");
 }
 
@@ -1066,7 +1156,50 @@ document.querySelectorAll("[data-goto]").forEach((el) => {
 
 refreshBalanceBtn?.addEventListener("click", () => refreshBalances(balanceDetails));
 homeRefreshBalance?.addEventListener("click", () => refreshBalances(homeBalanceSummary));
-fundWalletBtn?.addEventListener("click", () => showFundModal(walletAddress));
+fundWalletBtn?.addEventListener("click", () => openFundFlow());
+
+// Add funds / copy address — buttons are rendered dynamically in balance HTML
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target?.closest?.("[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === "add-funds") {
+    ev.preventDefault();
+    openFundFlow();
+    return;
+  }
+  if (action === "relogin") {
+    ev.preventDefault();
+    await logout();
+    return;
+  }
+  if (action === "copy-deposit") {
+    ev.preventDefault();
+    const addr = btn.dataset.address || depositAddressNow();
+    if (!addr) return;
+    try {
+      await navigator.clipboard.writeText(addr);
+      const prev = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = prev; }, 2000);
+    } catch {
+      alert(addr);
+    }
+  }
+});
+
+document.getElementById("magic-wallet-ui-btn")?.addEventListener("click", async () => {
+  // Kept only if a future screen re-adds #magic-wallet-ui-btn.
+  // Native <dialog> top-layer always covers Magic's iframe — never open showUI from inside fund-modal.
+  const fundModal = document.getElementById("fund-modal");
+  if (fundModal?.open) fundModal.close();
+  try {
+    if (!magic) await initMagic();
+    await magic.wallet.showUI();
+  } catch (err) {
+    alert(err?.message ?? "Magic wallet UI unavailable");
+  }
+});
 
 saveAgentBtn?.addEventListener("click", async () => {
   const goal = goalInput.value.trim();

@@ -1,4 +1,5 @@
 import { getNetworkMode } from "../config/chains.js";
+import { probeParticleUa } from "../wallet/ua.js";
 
 export interface ServiceHealth {
   id: string;
@@ -11,7 +12,7 @@ function hasEnv(...names: string[]): boolean {
   return names.every((n) => Boolean(process.env[n]?.trim()));
 }
 
-export function getServicesHealth(): ServiceHealth[] {
+export async function getServicesHealth(): Promise<ServiceHealth[]> {
   const network = getNetworkMode();
 
   const magic: ServiceHealth = {
@@ -23,16 +24,27 @@ export function getServicesHealth(): ServiceHealth[] {
       : "Missing MAGIC_SECRET_KEY or MAGIC_PUBLISHABLE_KEY",
   };
 
-  const particle: ServiceHealth = {
-    id: "particle",
-    name: "Particle UA",
-    status: hasEnv("PARTICLE_PROJECT_ID", "PARTICLE_CLIENT_KEY", "PARTICLE_APP_ID")
-      ? "ok"
-      : "unconfigured",
-    detail: hasEnv("PARTICLE_PROJECT_ID", "PARTICLE_CLIENT_KEY", "PARTICLE_APP_ID")
-      ? "Universal Account cross-chain top-up ready"
-      : "Missing PARTICLE_* credentials",
-  };
+  let particle: ServiceHealth;
+  if (!hasEnv("PARTICLE_PROJECT_ID", "PARTICLE_CLIENT_KEY", "PARTICLE_APP_ID")) {
+    particle = {
+      id: "particle",
+      name: "Particle UA",
+      status: "unconfigured",
+      detail: "Missing PARTICLE_* credentials",
+    };
+  } else {
+    // Official SDK: getSmartAccountOptions() — env-only checks hid live UA failures.
+    const owner =
+      (process.env.SELLER_PAY_TO as string | undefined) ??
+      "0x0000000000000000000000000000000000000001";
+    const probe = await probeParticleUa(owner);
+    particle = {
+      id: "particle",
+      name: "Particle UA",
+      status: probe.ok ? "ok" : "degraded",
+      detail: probe.ok ? probe.detail : `UA API: ${probe.detail}`,
+    };
+  }
 
   const cdp: ServiceHealth = {
     id: "cdp",
