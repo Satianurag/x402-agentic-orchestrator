@@ -1,6 +1,11 @@
-import { atomicToUsdc } from "../config/chains.js";
+import { atomicToUsdc, getPaymentCaip2 } from "../config/chains.js";
 import { probeQuote } from "../services/x402-client.js";
 import { mcpSearchResources } from "./bazaar-mcp.js";
+import {
+  matchDiscoveryResourceUrl,
+  searchDiscoveryResources,
+  type DiscoveryResource,
+} from "./discovery-search.js";
 
 /** Tool entry from Bazaar MCP `search_resources` (CDP discovery catalog). */
 export interface CatalogTool {
@@ -14,6 +19,10 @@ export interface CatalogTool {
   calls30d: number | null;
   inputSchema?: Record<string, unknown>;
   httpResource: string | null;
+  /** Canonical HTTPS URL from CDP /discovery/search (preferred for live 402 payment). */
+  resourceUrl: string | null;
+  /** Seller payTo on the payment network — used to match discovery rows. */
+  catalogPayTo: string | null;
   /** HTTP method from Bazaar extension (GET/POST). */
   httpMethod: "GET" | "POST" | null;
   /** Example body/query from Bazaar discovery extension. */
@@ -27,7 +36,7 @@ type McpToolRaw = {
   inputSchema?: Record<string, unknown>;
   _meta?: {
     "x402/payment-required"?: {
-      accepts?: Array<{ amount?: string; network?: string }>;
+      accepts?: Array<{ amount?: string; network?: string; payTo?: string }>;
       extensions?: {
         bazaar?: {
           info?: {
@@ -80,6 +89,30 @@ function qualityFromDescription(desc: string): { payers: number | null; calls: n
   return { payers: Number(m[2]), calls: Number(m[1]) };
 }
 
+function payToFromTool(tool: McpToolRaw): string | null {
+  const network = getPaymentCaip2();
+  const accepts = tool._meta?.["x402/payment-required"]?.accepts ?? [];
+  const match = accepts.find((a) => a.network === network);
+  return match?.payTo ?? accepts[0]?.payTo ?? null;
+}
+
+function enrichToolsWithDiscovery(
+  tools: CatalogTool[],
+  discoveryRows: DiscoveryResource[],
+): CatalogTool[] {
+  if (discoveryRows.length === 0) return tools;
+
+  return tools.map((tool) => {
+    const resourceUrl = matchDiscoveryResourceUrl(
+      tool.mcpToolName,
+      tool.catalogPayTo,
+      discoveryRows,
+    );
+    if (!resourceUrl) return tool;
+    return { ...tool, resourceUrl };
+  });
+}
+
 function httpResourceFromName(name: string): string | null {
   const m = name.match(/^x402_(get|post)_https___(.+?)_[a-f0-9]+_/i);
   if (!m) return null;
@@ -127,6 +160,8 @@ export function parseMcpCatalogTools(result: unknown): CatalogTool[] {
           calls30d: quality.calls,
           inputSchema: t.inputSchema,
           httpResource: httpResourceFromName(t.name),
+          resourceUrl: null,
+          catalogPayTo: payToFromTool(t),
           httpMethod: httpMethodFromTool(t),
           exampleInput: exampleInputFromTool(t),
           curated: Boolean(t._meta?.["x402/curation"]?.curated),
@@ -138,11 +173,11 @@ export function parseMcpCatalogTools(result: unknown): CatalogTool[] {
 }
 
 async function probeCatalogTool(tool: CatalogTool, goal: string): Promise<CatalogTool> {
-  if (!tool.httpResource) return tool;
+  const endpoint = tool.resourceUrl ?? tool.httpResource;
+  if (!endpoint) return tool;
 
-  const method =
-    tool.mcpToolName.startsWith("x402_get_") ? "GET" : "POST";
-  let url = tool.httpResource;
+  const method = tool.httpMethod ?? (tool.mcpToolName.startsWith("x402_get_") ? "GET" : "POST");
+  let url = endpoint;
   let init: RequestInit;
 
   if (method === "GET") {
@@ -153,10 +188,11 @@ async function probeCatalogTool(tool: CatalogTool, goal: string): Promise<Catalo
     url = u.toString();
     init = { method: "GET" };
   } else {
+    const body = tool.exampleInput ?? { query: goal.slice(0, 200) };
     init = {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query: goal.slice(0, 200) }),
+      body: JSON.stringify(body),
     };
   }
 
@@ -215,7 +251,19 @@ export async function discoverToolCatalogForPlanning(
     add(await discoverToolCatalog(pick, 10));
   }
 
-  return out.slice(0, limit);
+  const discoveryQueries = [goal, ...(userToolPicks ?? [])];
+  const discoveryRows: DiscoveryResource[] = [];
+  const seenResources = new Set<string>();
+  for (const q of discoveryQueries) {
+    if (discoveryRows.length >= 20) break;
+    for (const row of await searchDiscoveryResources(q, 20)) {
+      if (seenResources.has(row.resource)) continue;
+      seenResources.add(row.resource);
+      discoveryRows.push(row);
+    }
+  }
+
+  return enrichToolsWithDiscovery(out.slice(0, limit), discoveryRows);
 }
 
 /** Live 402 probe on planner-selected tools (best-effort). */

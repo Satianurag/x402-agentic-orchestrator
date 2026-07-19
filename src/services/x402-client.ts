@@ -1,5 +1,6 @@
 import { createPublicClient, http } from "viem";
-import { x402Client, x402HTTPClient } from "@x402/core/client";
+import { x402Client, x402HTTPClient, type SelectPaymentRequirements } from "@x402/core/client";
+import type { PaymentRequirements } from "@x402/core/types";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { toClientEvmSigner } from "@x402/evm";
@@ -55,6 +56,14 @@ function paymentHeader(res: Response, name: string): string | null {
   return res.headers.get(name) ?? res.headers.get(name.toUpperCase());
 }
 
+/** Prefer Base (or configured payment chain) when sellers offer Solana + EVM accepts. */
+function preferPaymentNetworkSelector(paymentCaip2: string): SelectPaymentRequirements {
+  return (_x402Version: number, accepts: PaymentRequirements[]) => {
+    const match = accepts.find((a) => a.network === paymentCaip2);
+    return match ?? accepts[0];
+  };
+}
+
 function createPaymentSigner() {
   const { signer } = getRunContext();
   if (signer.mode === "cli") {
@@ -77,7 +86,7 @@ export function createX402PaymentClient(budgetGuard?: BudgetGuard) {
   const sellerCaip2 = getSellerCaip2();
   const evmSigner = createPaymentSigner();
 
-  const client = new x402Client();
+  const client = new x402Client(preferPaymentNetworkSelector(paymentCaip2));
   registerExactEvmScheme(client, {
     signer: evmSigner,
     networks: [paymentCaip2],
@@ -213,7 +222,9 @@ export async function probeQuote(
     required = httpClient.getPaymentRequiredResponse(getHeader, body);
   }
 
-  const accept = required.accepts[0];
+  const paymentCaip2 = getPaymentCaip2();
+  const accept =
+    required.accepts.find((a) => a.network === paymentCaip2) ?? required.accepts[0];
   const amount =
     accept?.amount ??
     (accept as { maxAmountRequired?: string } | undefined)?.maxAmountRequired;

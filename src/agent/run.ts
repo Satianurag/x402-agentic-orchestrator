@@ -3,7 +3,9 @@ import { validateGoal } from "./goal-validation.js";
 import { waitForPlanApproval } from "./run-controller.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
 import { synthesizeWithLlm } from "./synthesize-llm.js";
-import { createBazaarMcpSession, mcpProxyToolCall, type BazaarMcpSession } from "./bazaar-mcp.js";
+import { createBazaarMcpSession, type BazaarMcpSession } from "./bazaar-mcp.js";
+import { executePaidToolStep } from "./tool-execution.js";
+import { findCatalogTool } from "./tool-catalog.js";
 import { resolveRunSession } from "../wallet/session.js";
 import { runWithContext } from "../wallet/run-context.js";
 import { setSignRequestEmitter } from "../wallet/sign-bridge.js";
@@ -66,6 +68,8 @@ async function executeStep(
   goal: string,
   context: unknown[],
   mcpSession: BazaarMcpSession | undefined,
+  guard: import("../budget/guard.js").BudgetGuard,
+  catalog: import("./tool-catalog.js").CatalogTool[],
 ): Promise<PaymentResult> {
   if (step.kind === "compose") {
     const deliverable = await synthesizeWithLlm(goal, context);
@@ -78,19 +82,8 @@ async function executeStep(
     };
   }
 
-  if (!step.mcpToolName) {
-    throw new Error(`MCP step "${step.label}" is missing mcpToolName`);
-  }
-  if (!mcpSession) {
-    throw new Error("MCP session required for Bazaar tool execution");
-  }
-
-  return mcpProxyToolCall(
-    mcpSession,
-    step.mcpToolName,
-    step.proxyParameters ?? {},
-    step.label,
-  );
+  const tool = step.mcpToolName ? findCatalogTool(catalog, step.mcpToolName) : undefined;
+  return executePaidToolStep(step, tool, mcpSession, guard);
 }
 
 async function runAgentInner(options: RunOptions): Promise<RunResult> {
@@ -148,7 +141,7 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
       const step = plan.steps[i];
       onEvent?.({ type: "step_start", step, index: i });
 
-      const result = await executeStep(step, goal, context, mcpSession);
+      const result = await executeStep(step, goal, context, mcpSession, guard, plan.catalog);
 
       if (step.kind === "mcp") {
         context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });

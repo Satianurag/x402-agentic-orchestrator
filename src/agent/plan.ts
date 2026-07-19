@@ -88,11 +88,14 @@ function coerceProxyParameters(
 function mcpStepFromPick(pick: PlannerResult["selectedTools"][number], catalog: CatalogTool[]): PlanStep {
   const tool = findCatalogTool(catalog, pick.mcpToolName);
   const est = tool ? effectiveUsdc(tool) : pick.estimatedUsdc;
+  const endpoint = tool?.resourceUrl
+    ? `live HTTP 402 → ${tool.resourceUrl}`
+    : `MCP proxy_tool_call → ${pick.mcpToolName}`;
   return {
     kind: "mcp",
     service: pick.displayName,
     label: pick.displayName,
-    endpoint: `MCP proxy_tool_call → ${pick.mcpToolName}`,
+    endpoint,
     estCostUsdc: est || pick.estimatedUsdc,
     mcpToolName: pick.mcpToolName,
     proxyParameters: coerceProxyParameters(pick, tool),
