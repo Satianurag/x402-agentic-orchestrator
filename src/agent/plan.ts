@@ -127,14 +127,14 @@ export async function createPlan(goal: string, options: CreatePlanOptions = {}):
 
   const paidToolSteps = planner.selectedTools.map((pick) => mcpStepFromPick(pick, mergedCatalog));
 
-  // Local Gemini compose — platform cost, $0 on user x402 ledger.
+  // Deterministic compose — $0 on user x402 ledger.
   const composeStep: PlanStep = {
     kind: "compose",
     service: "compose",
-    label: "Compose deliverable (included)",
-    endpoint: "local Gemini · not billed via x402",
+    label: "Build deliverable (deterministic)",
+    endpoint: "Evidence IR → template renderer · $0",
     estCostUsdc: 0,
-    why: "Our LLM formats paid tool results — not charged to your USDC budget.",
+    why: "Structured report from paid tool JSON — no LLM, all links from verified data.",
   };
 
   const steps = [...paidToolSteps, composeStep];

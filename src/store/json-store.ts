@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SpendLine } from "../agent/run.js";
+import type { ReportDocument } from "../agent/report-document.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "../../data");
@@ -14,6 +15,7 @@ export interface RunRecord {
   status: "completed" | "failed" | "stopped";
   totalUsdc: number;
   deliverable: string;
+  document?: ReportDocument;
   spend: SpendLine[];
   uaTopUpTxId?: string;
   budgetUsdc?: number;

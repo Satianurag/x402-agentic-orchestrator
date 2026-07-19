@@ -2,7 +2,8 @@ import { fundRunWallet } from "../budget/guard.js";
 import { validateGoal } from "./goal-validation.js";
 import { waitForPlanApproval } from "./run-controller.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
-import { synthesizeWithLlm } from "./synthesize-llm.js";
+import { composeDeliverable } from "./compose-deliverable.js";
+import type { ReportDocument } from "./report-document.js";
 import { createBazaarMcpSession, type BazaarMcpSession } from "./bazaar-mcp.js";
 import { executePaidToolStep } from "./tool-execution.js";
 import { findCatalogTool } from "./tool-catalog.js";
@@ -23,7 +24,10 @@ export interface SpendLine {
 }
 
 export interface RunResult {
+  /** Markdown export — derived deterministically from `document`. */
   deliverable: string;
+  /** Structured report — source of truth for UI rendering. */
+  document: ReportDocument;
   /** Paid x402 lines + included compose (usdc 0). totalUsdc sums paid only. */
   spend: SpendLine[];
   totalUsdc: number;
@@ -65,23 +69,10 @@ export function abortRun(): void {
 
 async function executeStep(
   step: PlanStep,
-  goal: string,
-  context: unknown[],
   mcpSession: BazaarMcpSession | undefined,
   guard: import("../budget/guard.js").BudgetGuard,
   catalog: import("./tool-catalog.js").CatalogTool[],
 ): Promise<PaymentResult> {
-  if (step.kind === "compose") {
-    const deliverable = await synthesizeWithLlm(goal, context);
-    return {
-      usdc: 0,
-      txHash: "",
-      explorerUrl: "",
-      network: "local",
-      data: { deliverable },
-    };
-  }
-
   const tool = step.mcpToolName ? findCatalogTool(catalog, step.mcpToolName) : undefined;
   return executePaidToolStep(step, tool, mcpSession, guard);
 }
@@ -125,6 +116,7 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
   const spend: SpendLine[] = [];
   const context: unknown[] = [];
   let deliverable = "";
+  let document: ReportDocument | null = null;
   const mcpSteps = plan.steps.filter((s) => s.kind === "mcp");
   const allowedToolNames = new Set(
     mcpSteps.map((s) => s.mcpToolName).filter((n): n is string => Boolean(n)),
@@ -141,13 +133,40 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
       const step = plan.steps[i];
       onEvent?.({ type: "step_start", step, index: i });
 
-      const result = await executeStep(step, goal, context, mcpSession, guard, plan.catalog);
+      if (step.kind === "compose") {
+        const paidSoFar = spend.filter((l) => !l.included).reduce((s, l) => s + l.usdc, 0);
+        const composed = composeDeliverable({
+          goal,
+          toolContext: context,
+          spend,
+          totalUsdc: paidSoFar,
+        });
+        document = composed.document;
+        deliverable = composed.deliverable;
 
-      if (step.kind === "mcp") {
-        context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
+        const line: SpendLine = {
+          service: step.label,
+          usdc: 0,
+          txHash: "",
+          explorerUrl: "",
+          network: "local",
+          included: true,
+        };
+        spend.push(line);
+        onEvent?.({
+          type: "payment",
+          line,
+          remaining: await guard.getRemaining(),
+        });
+        onEvent?.({ type: "step_done", step, index: i });
+        continue;
       }
 
-      const included = step.kind === "compose" || (result.usdc === 0 && !result.txHash);
+      const result = await executeStep(step, mcpSession, guard, plan.catalog);
+
+      context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
+
+      const included = result.usdc === 0 && !result.txHash;
       const line: SpendLine = {
         service: step.label,
         usdc: result.usdc,
@@ -163,22 +182,27 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
         remaining: await guard.getRemaining(),
       });
       onEvent?.({ type: "step_done", step, index: i });
-
-      if (step.kind === "compose") {
-        const payload = result.data as { deliverable?: string };
-        if (!payload.deliverable) {
-          throw new Error("Compose step returned no deliverable");
-        }
-        deliverable = payload.deliverable;
-      }
     }
   } finally {
     await mcpSession?.close();
   }
 
   const totalUsdc = spend.filter((l) => !l.included).reduce((s, l) => s + l.usdc, 0);
+
+  if (!document) {
+    const composed = composeDeliverable({
+      goal,
+      toolContext: context,
+      spend,
+      totalUsdc,
+    });
+    document = composed.document;
+    deliverable = composed.deliverable;
+  }
+
   const runResult: RunResult = {
     deliverable,
+    document,
     spend,
     totalUsdc,
     plan,

@@ -51,9 +51,11 @@ export function renderHistoryList(container, runs, options) {
 export function openRunInResult(run, callbacks) {
   const result = {
     deliverable: run.deliverable,
+    document: run.document,
     spend: run.spend,
     totalUsdc: run.totalUsdc,
     uaTopUpTxId: run.uaTopUpTxId,
+    goal: run.goal,
   };
   callbacks.renderResult(result);
 }

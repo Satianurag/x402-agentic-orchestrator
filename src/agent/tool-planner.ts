@@ -5,7 +5,7 @@ const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const PLANNER_SYSTEM =
   "You are an expert x402 Bazaar tool planner for a cost-sensitive autonomous agent. " +
-  "Paid tools cost real USDC; our local LLM compose is FREE and must NOT be replaced by buying LLM-written briefs or writeups. " +
+  "Paid tools cost real USDC; deliverable composition is FREE and deterministic (no LLM). " +
   "Select the MINIMUM set of PRIMARY-SOURCE tools (live prices, news with URLs, raw APIs) that fulfill live-data needs. " +
   "Do NOT select tools described as LLM-written briefings, writeups, or 'one call the whole market' — we compose locally. " +
   "If the goal asks for multiple assets (e.g. BTC+ETH+SOL prices), pick tools that cover EACH asset — never BTC-only for a multi-asset goal. " +

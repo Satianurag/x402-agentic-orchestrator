@@ -16,7 +16,8 @@
     "dev-harness:facilitator": "tsx dev-harness/facilitator.ts",
     "test:e2e": "tsx scripts/e2e.ts",
     "probe": "tsx scripts/probe.ts",
-    "test:estimate": "tsx scripts/test-discovery-probe.ts"
+    "test:estimate": "tsx scripts/test-discovery-probe.ts",
+    "test:report": "tsx scripts/test-build-report.ts"
   },
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.53.0",
@@ -35,7 +36,8 @@
     "ethers": "6.17.0",
     "express": "4.22.2",
     "tsx": "4.23.1",
-    "viem": "2.55.2"
+    "viem": "2.55.2",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/express": "4.17.25",

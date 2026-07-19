@@ -48,7 +48,11 @@ async function main(): Promise<void> {
     if (!result.deliverable || result.deliverable.length < 20) {
       throw new Error("Expected non-empty deliverable");
     }
+    if (!result.document || result.document.version !== "1") {
+      throw new Error("Expected structured ReportDocument v1");
+    }
     console.log(`  ✓ Deliverable: ${result.deliverable.length} chars`);
+    console.log(`  ✓ Report sections: ${result.document.sections.length}`);
     console.log(`  ✓ Total spend: $${result.totalUsdc.toFixed(6)}`);
   } else {
     console.log("\n  (Skipping paid run — set E2E_PAID=1 for full execution)\n");

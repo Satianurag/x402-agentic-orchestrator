@@ -14,6 +14,7 @@ import {
   isInsufficientFunds,
   formatUsdc,
 } from "./js/utils.js";
+import { renderDeliverable } from "./js/report-renderer.js";
 import { fetchBalance, renderBalanceHtml, renderDepositPanelHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
 import { closeDialogsBeforeMagicUi } from "./js/magic-ui.js";
 import {
@@ -280,6 +281,7 @@ async function applyRoute(route, { fromPopstate = false } = {}) {
         renderResult(
           {
             deliverable: run.deliverable,
+            document: run.document,
             spend: run.spend,
             totalUsdc: run.totalUsdc,
             uaTopUpTxId: run.uaTopUpTxId,
@@ -370,7 +372,7 @@ function txChipHtml(url, label, variant) {
 
 function stepLabel(step) {
   if (step?.kind === "compose" || step?.kind === "synthesize") {
-    return step.label || "Compose deliverable (included)";
+    return step.label || "Build deliverable (deterministic)";
   }
   return step.label ?? step.service;
 }
@@ -768,7 +770,8 @@ function renderResult(result, { runId = null, updateUrl = true } = {}) {
   }
   if (receiptTotalInline) receiptTotalInline.textContent = totalStr;
 
-  deliverableEl.innerHTML = renderMarkdown(result.deliverable);
+  const structured = renderDeliverable(result);
+  deliverableEl.innerHTML = structured ?? renderMarkdown(result.deliverable);
   spendBody.innerHTML = "";
   for (const line of result.spend) {
     const tr = document.createElement("tr");

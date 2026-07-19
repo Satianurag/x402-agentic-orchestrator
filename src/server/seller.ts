@@ -14,7 +14,7 @@ import {
   warnIfPublicBaseRpc,
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
-import { synthesizeWithLlm } from "../agent/synthesize-llm.js";
+import { composeDeliverable } from "../agent/compose-deliverable.js";
 import { runAgent, abortRun, type RunEvent, type RunResult } from "../agent/run.js";
 import { resolvePlanApproval, hasPendingApproval } from "../agent/run-controller.js";
 import { createRunEstimate, GoalRejectedError } from "../agent/estimate.js";
@@ -96,6 +96,7 @@ function persistCompletedRun(
     status,
     totalUsdc: result?.totalUsdc ?? 0,
     deliverable: result?.deliverable ?? (safeError ? `Error: ${safeError}` : ""),
+    document: result?.document,
     spend: result?.spend ?? [],
     uaTopUpTxId: result?.uaTopUpTxId,
     budgetUsdc,
@@ -143,8 +144,13 @@ app.post("/synthesize", async (req, res) => {
       res.status(400).json({ error: "goal is required" });
       return;
     }
-    const deliverable = await synthesizeWithLlm(goal, context ?? []);
-    res.json({ deliverable, goal, stepCount: (context ?? []).length });
+    const { deliverable, document } = composeDeliverable({
+      goal,
+      toolContext: context ?? [],
+      spend: [],
+      totalUsdc: 0,
+    });
+    res.json({ deliverable, document, goal, stepCount: (context ?? []).length });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
