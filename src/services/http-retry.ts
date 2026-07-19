@@ -12,6 +12,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function bodyNeedsDuplex(body: RequestInit["body"]): boolean {
+  if (body == null) return false;
+  if (typeof body === "string") return false;
+  if (body instanceof ArrayBuffer) return false;
+  if (ArrayBuffer.isView(body)) return false;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return false;
+  if (typeof FormData !== "undefined" && body instanceof FormData) return false;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) return false;
+  return true;
+}
+
+/** Node undici requires duplex when body is a ReadableStream. */
+function withNodeFetchCompat(init: RequestInit): RequestInit {
+  if (!bodyNeedsDuplex(init.body)) return init;
+  return { ...init, duplex: "half" };
+}
+
+/**
+ * Materialize a Request body so retries can replay it.
+ * Node fetch rejects stream bodies without `duplex: 'half'` when passed via RequestInit.
+ */
+export async function snapshotRequestInit(req: Request): Promise<RequestInit> {
+  if (!req.body) {
+    return { method: req.method, headers: req.headers };
+  }
+  const body = await req.clone().arrayBuffer();
+  return {
+    method: req.method,
+    headers: req.headers,
+    body: body.byteLength > 0 ? Buffer.from(body) : undefined,
+  };
+}
+
 /** Pre-payment HTTP fetch with bounded retries (vendor 5xx / timeout). */
 export async function fetchWithRetry(
   url: string,
@@ -25,12 +58,13 @@ export async function fetchWithRetry(
   const label = options.label ?? url;
 
   let lastError: Error | null = null;
+  const normalizedInit = withNodeFetchCompat(init);
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       const res = await fetch(url, {
-        ...init,
-        signal: init.signal ?? AbortSignal.timeout(timeoutMs),
+        ...normalizedInit,
+        signal: normalizedInit.signal ?? AbortSignal.timeout(timeoutMs),
       });
 
       if (retryOn.has(res.status) && attempt < attempts) {

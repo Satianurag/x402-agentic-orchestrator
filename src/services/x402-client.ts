@@ -21,7 +21,7 @@ import { getRunContext } from "../wallet/run-context.js";
 import { getRunEoaAccount } from "../wallet/eoa.js";
 import { requestDelegatedSignTypedData } from "../wallet/sign-bridge.js";
 import type { BudgetGuard } from "../budget/guard.js";
-import { fetchWithRetry } from "./http-retry.js";
+import { fetchWithRetry, snapshotRequestInit } from "./http-retry.js";
 
 export interface PaymentResult {
   usdc: number;
@@ -118,18 +118,10 @@ function createResilientFetch(label: string): typeof fetch {
       req.headers.has("PAYMENT-SIGNATURE") ||
       req.headers.has("x-payment") ||
       req.headers.has("X-PAYMENT");
-    if (hasPayment) return fetch(input, init);
+    if (hasPayment) return fetch(req);
 
-    return fetchWithRetry(
-      req.url,
-      {
-        method: req.method,
-        headers: req.headers,
-        body: req.body,
-        ...(init ?? {}),
-      },
-      { label, attempts: 3 },
-    );
+    const retryInit = await snapshotRequestInit(req);
+    return fetchWithRetry(req.url, retryInit, { label, attempts: 3 });
   };
 }
 
