@@ -134,6 +134,11 @@ export class BudgetGuard {
     this.spentAtomic += usdcToAtomic(usdc);
   }
 
+  /** Restore spend ledger when resuming a partially completed run. */
+  seedSpent(usdc: number): void {
+    this.spentAtomic = usdcToAtomic(usdc);
+  }
+
   assertFunded(): void {
     if (!this.funded) {
       throw new Error("Run wallet not funded — call fundRunWallet() first");

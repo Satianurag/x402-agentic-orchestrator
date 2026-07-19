@@ -15,8 +15,9 @@ import {
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
 import { composeDeliverable } from "../agent/compose-deliverable.js";
-import { runAgent, abortRun, type RunEvent, type RunResult } from "../agent/run.js";
+import { runAgent, abortRun, type RunEvent, type RunResult, type RunCheckpoint } from "../agent/run.js";
 import { resolvePlanApproval, hasPendingApproval } from "../agent/run-controller.js";
+import { formatUserFacingError } from "../agent/vendor-errors.js";
 import { createRunEstimate, GoalRejectedError } from "../agent/estimate.js";
 import { answerFollowUp } from "../agent/follow-up-chat.js";
 import type { AgentPlan } from "../agent/plan.js";
@@ -87,19 +88,23 @@ function persistCompletedRun(
   result: RunResult | null,
   status: RunRecord["status"],
   errorMessage?: string,
+  checkpoint?: RunCheckpoint,
 ): void {
   const safeError = errorMessage ? sanitizeErrorMessage(errorMessage) : undefined;
+  const partialSpend = checkpoint?.spend ?? result?.spend ?? [];
+  const partialTotal = partialSpend.filter((l) => !l.included).reduce((s, l) => s + l.usdc, 0);
   saveRun(address, {
     id: runId,
     goal,
     createdAt: new Date().toISOString(),
     status,
-    totalUsdc: result?.totalUsdc ?? 0,
+    totalUsdc: result?.totalUsdc ?? partialTotal,
     deliverable: result?.deliverable ?? (safeError ? `Error: ${safeError}` : ""),
     document: result?.document,
-    spend: result?.spend ?? [],
+    spend: partialSpend,
     uaTopUpTxId: result?.uaTopUpTxId,
     budgetUsdc,
+    checkpoint: status === "partial" ? checkpoint : undefined,
   });
 }
 
@@ -424,13 +429,14 @@ app.post("/run/resume", (req, res) => {
 });
 
 app.post("/run", async (req, res) => {
-  const { goal, budget, stream, didToken, userToolPicks, approvedPlan } = req.body as {
+  const { goal, budget, stream, didToken, userToolPicks, approvedPlan, resumeFrom } = req.body as {
     goal?: string;
     budget?: number;
     stream?: boolean;
     didToken?: string;
     userToolPicks?: string[];
     approvedPlan?: AgentPlan;
+    resumeFrom?: RunCheckpoint;
   };
 
   if (!goal || typeof goal !== "string") {
@@ -473,6 +479,7 @@ app.post("/run", async (req, res) => {
     runId,
     userToolPicks: picks,
     approvedPlan,
+    resumeFrom,
   };
 
   if (stream) {
@@ -482,11 +489,12 @@ app.post("/run", async (req, res) => {
     res.flushHeaders?.();
 
     let finalResult: RunResult | null = null;
+    let liveCheckpoint: RunCheckpoint | null = resumeFrom ?? null;
     let stopped = false;
 
     const send = (event: RunEvent) => {
       if (event.type === "done") finalResult = event.result;
-      // EIP-3009 / viem typed-data may contain BigInt — JSON.stringify would throw.
+      if (event.type === "checkpoint") liveCheckpoint = event.checkpoint;
       res.write(`data: ${JSON.stringify(jsonSafeDeep(event))}\n\n`);
     };
 
@@ -499,16 +507,18 @@ app.post("/run", async (req, res) => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("aborted") || message.includes("cancelled")) stopped = true;
-      send({ type: "error", message });
+      send({ type: "error", message: formatUserFacingError(err) });
       if (userAddress) {
+        const canPartial = liveCheckpoint && liveCheckpoint.nextStepIndex > 0;
         persistCompletedRun(
           userAddress,
           runId,
           goal,
           budgetUsdc,
           finalResult,
-          stopped ? "stopped" : "failed",
+          stopped ? "stopped" : canPartial ? "partial" : "failed",
           message,
+          canPartial ? liveCheckpoint ?? undefined : undefined,
         );
       }
       res.end();

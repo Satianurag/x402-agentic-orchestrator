@@ -31,12 +31,27 @@ function hostFromMessage(message: string): string | null {
   return m?.[1] ?? null;
 }
 
+/** Strip HTML error pages (Cloudflare 5xx) before classification or display. */
+export function stripHtmlFromError(message: string): string {
+  if (!/<html[\s>]/i.test(message) && !/<!DOCTYPE/i.test(message)) {
+    return message.length > 500 ? `${message.slice(0, 500)}…` : message;
+  }
+  const status = statusFromMessage(message);
+  const host = hostFromMessage(message) ?? "pay.alephant.io";
+  return `${host} returned HTTP ${status ?? "5xx"} (vendor outage — Cloudflare bad gateway).`;
+}
+
+function normalizeErrorMessage(message: string): string {
+  return stripHtmlFromError(message);
+}
+
 /** Classify tool HTTP/MCP failures for UI + retry policy. */
 export function classifyVendorError(raw: unknown): ClassifiedVendorError {
-  const message = raw instanceof Error ? raw.message : String(raw ?? "Unknown error");
+  const rawMessage = raw instanceof Error ? raw.message : String(raw ?? "Unknown error");
+  const message = normalizeErrorMessage(rawMessage);
   const lower = message.toLowerCase();
-  const httpStatus = statusFromMessage(message);
-  const host = hostFromMessage(message);
+  const httpStatus = statusFromMessage(rawMessage) ?? statusFromMessage(message);
+  const host = hostFromMessage(rawMessage) ?? hostFromMessage(message);
 
   if (/insufficient|exceeds budget|budget/i.test(lower)) {
     return {

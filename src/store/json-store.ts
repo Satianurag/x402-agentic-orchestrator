@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SpendLine } from "../agent/run.js";
+import type { SpendLine, RunCheckpoint } from "../agent/run.js";
 import type { ReportDocument } from "../agent/report-document.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -12,13 +12,15 @@ export interface RunRecord {
   id: string;
   goal: string;
   createdAt: string;
-  status: "completed" | "failed" | "stopped";
+  status: "completed" | "failed" | "stopped" | "partial";
   totalUsdc: number;
   deliverable: string;
   document?: ReportDocument;
   spend: SpendLine[];
   uaTopUpTxId?: string;
   budgetUsdc?: number;
+  /** Set when status is partial — resume without re-running paid steps. */
+  checkpoint?: RunCheckpoint;
 }
 
 export interface CustomAgent {

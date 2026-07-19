@@ -129,6 +129,7 @@ const runErrorCard = document.getElementById("run-error-card");
 const runErrorTitle = document.getElementById("run-error-title");
 const runErrorMessage = document.getElementById("run-error-message");
 const retryRunBtn = document.getElementById("retry-run-btn");
+const resumeRunBtn = document.getElementById("resume-run-btn");
 const errorHomeBtn = document.getElementById("error-home-btn");
 const runningTitle = document.getElementById("running-title");
 const runningSubtitle = document.getElementById("running-subtitle");
@@ -186,6 +187,20 @@ let runAborted = false;
 let appConfig = null;
 let lastEstimate = null;
 let lastEstimateGoal = "";
+let lastResumeCheckpoint = null;
+
+function sanitizeRunError(message) {
+  const text = String(message ?? "");
+  if (/<html[\s>]/i.test(text) || /<!DOCTYPE/i.test(text)) {
+    const code = text.match(/failed \((\d{3})\)/)?.[1] ?? "502";
+    return `Vendor service is temporarily down (HTTP ${code}). Your completed steps are saved — use Resume run to continue without re-paying.`;
+  }
+  return text.length > 480 ? `${text.slice(0, 480)}…` : text;
+}
+
+function canResumeFromCheckpoint(cp) {
+  return Boolean(cp && cp.nextStepIndex > 0 && cp.nextStepIndex < cp.plan?.steps?.length);
+}
 let activeBudgetPreset = "recommended";
 let pendingLaunchBudget = null;
 let selectedCatalogPicks = new Set();
@@ -629,21 +644,29 @@ function hideRunError() {
   runErrorCard.hidden = true;
 }
 
-function showRunError(message, { stopped = false } = {}) {
+function showRunError(message, { stopped = false, canResume = false } = {}) {
+  const safe = sanitizeRunError(message);
   runErrorCard.hidden = false;
-  runErrorTitle.textContent = stopped ? "Run stopped" : isInsufficientFunds(message) ? "Add funds to continue" : "Something went wrong";
-  runErrorMessage.textContent = message;
-  if (isInsufficientFunds(message)) {
-    runErrorMessage.innerHTML = `${escapeHtml(message)}<br><br><button type="button" class="btn btn-secondary btn-sm" id="error-fund-btn">Add funds</button>`;
+  runErrorTitle.textContent = stopped
+    ? "Run stopped"
+    : isInsufficientFunds(safe)
+      ? "Add funds to continue"
+      : "Something went wrong";
+  runErrorMessage.textContent = safe;
+  if (resumeRunBtn) resumeRunBtn.hidden = !canResume;
+  if (isInsufficientFunds(safe)) {
+    runErrorMessage.innerHTML = `${escapeHtml(safe)}<br><br><button type="button" class="btn btn-secondary btn-sm" id="error-fund-btn">Add funds</button>`;
     document.getElementById("error-fund-btn")?.addEventListener("click", () => openFundFlow());
   }
   runningTitle.textContent = stopped ? "Run stopped" : "Run ended";
-  runningSubtitle.textContent = stopped
-    ? "No further steps will run."
-    : "Review the message below and try again when ready.";
+  runningSubtitle.textContent = canResume
+    ? `${lastResumeCheckpoint.nextStepIndex} of ${lastResumeCheckpoint.plan.steps.length} steps done — resume to continue.`
+    : stopped
+      ? "No further steps will run."
+      : "Review the message below and try again when ready.";
 }
 
-function resetRunUi(budget) {
+function resetRunUi(budget, { keepCheckpoint = false } = {}) {
   runLog.textContent = "";
   runTimeline.innerHTML = "";
   stepState.clear();
@@ -651,6 +674,8 @@ function resetRunUi(budget) {
   runAborted = false;
   uaTopupCard.hidden = true;
   hideRunError();
+  if (!keepCheckpoint) lastResumeCheckpoint = null;
+  if (resumeRunBtn) resumeRunBtn.hidden = true;
   runningTitle.textContent = "Working on your request…";
   runningSubtitle.textContent = "This usually takes under a minute.";
   updateBudgetBar(0, budget);
@@ -1240,19 +1265,20 @@ async function fetchEstimate() {
   }
 }
 
-async function startRun() {
+async function startRun({ resumeFrom = null } = {}) {
   if (!(await requireAuth())) return;
 
-  const goal = goalInput.value.trim();
+  const checkpoint = resumeFrom ?? null;
+  const goal = checkpoint?.goal ?? goalInput.value.trim();
   if (!goal) {
     showToast("Please enter a goal or pick a template.", { type: "warning" });
     return;
   }
-  if (!lastEstimate?.plan) {
+  if (!checkpoint && !lastEstimate?.plan) {
     showToast("Check the price and plan before starting a run.", { type: "warning" });
     return;
   }
-  if (lastEstimate.probeGateOk === false) {
+  if (!checkpoint && lastEstimate.probeGateOk === false) {
     const probe = evaluateProbeGate({
       probeGateOk: lastEstimate.probeGateOk,
       probeFailures: lastEstimate.probeFailures,
@@ -1262,10 +1288,11 @@ async function startRun() {
     return;
   }
 
-  const budget = getSelectedRunBudget();
-  if (budget < lastEstimate.plan.totalEstUsdc) {
+  const budget = checkpoint?.budgetUsdc ?? getSelectedRunBudget();
+  const plan = checkpoint?.plan ?? lastEstimate.plan;
+  if (!checkpoint && budget < plan.totalEstUsdc) {
     showToast(
-      `Run limit ${formatBudget(budget)} is below the estimated ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Raise the limit to continue.`,
+      `Run limit ${formatBudget(budget)} is below the estimated ${formatUsdc(plan.totalEstUsdc)}. Raise the limit to continue.`,
       { type: "warning" },
     );
     refreshBudgetControlStatus();
@@ -1275,9 +1302,11 @@ async function startRun() {
   budgetInput.value = String(budget);
 
   showView("running");
-  resetRunUi(budget);
+  resetRunUi(budget, { keepCheckpoint: Boolean(checkpoint) });
 
-  let spent = 0;
+  let spent = checkpoint
+    ? checkpoint.spend.filter((l) => !l.included).reduce((s, l) => s + l.usdc, 0)
+    : 0;
   let activeStep = null;
   let hadError = false;
   let runBudget = budget;
@@ -1292,7 +1321,8 @@ async function startRun() {
         stream: true,
         didToken,
         userToolPicks: parseUserToolPicks(),
-        approvedPlan: lastEstimate?.plan,
+        approvedPlan: plan,
+        resumeFrom: checkpoint ?? undefined,
       }),
     });
 
@@ -1343,6 +1373,8 @@ async function startRun() {
           }
         } else if (event.type === "step_retry") {
           appendLog(`  ↻ retry ${event.attempt}: ${event.reason}`);
+        } else if (event.type === "checkpoint") {
+          lastResumeCheckpoint = event.checkpoint;
         } else if (event.type === "step_done") {
           setStepState(stepLabel(event.step), "settled");
           appendLog(`  ✓ ${stepLabel(event.step)} settled`);
@@ -1368,8 +1400,11 @@ async function startRun() {
           }
         } else if (event.type === "error") {
           hadError = true;
-          appendLog(`ERROR: ${event.message}`);
-          showRunError(event.message, { stopped: runAborted });
+          appendLog(`ERROR: ${sanitizeRunError(event.message)}`);
+          showRunError(event.message, {
+            stopped: runAborted,
+            canResume: canResumeFromCheckpoint(lastResumeCheckpoint),
+          });
         } else if (event.type === "done") {
           notifyRunComplete(goal, event.result.totalUsdc);
           renderResult(event.result);
@@ -1383,7 +1418,10 @@ async function startRun() {
   } catch (err) {
     appendLog(`FAILED: ${err.message}`);
     if (activeStep) setStepState(activeStep, runAborted ? "stopped" : "failed");
-    showRunError(err.message, { stopped: runAborted });
+    showRunError(err.message, {
+      stopped: runAborted,
+      canResume: canResumeFromCheckpoint(lastResumeCheckpoint),
+    });
   }
 }
 
@@ -1451,8 +1489,16 @@ logoutModal?.addEventListener("cancel", (ev) => {
 estimateBtn?.addEventListener("click", fetchEstimate);
 runBtn.addEventListener("click", startRun);
 retryRunBtn?.addEventListener("click", () => {
+  lastResumeCheckpoint = null;
   if (goalInput.value.trim() === lastEstimateGoal && lastEstimate) startRun();
   else fetchEstimate().then(() => { if (lastEstimate) startRun(); });
+});
+resumeRunBtn?.addEventListener("click", () => {
+  if (!canResumeFromCheckpoint(lastResumeCheckpoint)) {
+    showToast("Nothing to resume — start a new run.", { type: "warning" });
+    return;
+  }
+  startRun({ resumeFrom: lastResumeCheckpoint });
 });
 errorHomeBtn?.addEventListener("click", () => showView("home"));
 

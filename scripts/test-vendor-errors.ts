@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { classifyProbeFailure, classifyVendorError } from "../src/agent/vendor-errors.js";
+import { classifyVendorError, stripHtmlFromError } from "../src/agent/vendor-errors.js";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -11,7 +11,12 @@ assert(down.kind === "vendor_down" && down.retryable, "502 is vendor_down + retr
 const verify = classifyVendorError(new Error("x402_verify_failed on proxy"));
 assert(verify.kind === "verify_failed" && !verify.retryable, "verify not retryable");
 
-const probe502 = classifyProbeFailure(new Error("Expected HTTP 402 from Alephant, got 502"));
-assert(probe502.userMessage.includes("blocked"), "probe failure blocks start");
+const html502 = classifyVendorError(
+  new Error('pay_alephant failed (502): <!DOCTYPE html><html>Bad gateway</html>'),
+);
+assert(html502.kind === "vendor_down" && !html502.userMessage.includes("<html"), "strips HTML");
+
+const stripped = stripHtmlFromError('failed (502): <!DOCTYPE html><title>502</title>');
+assert(stripped.includes("502") && !stripped.includes("<!DOCTYPE"), "stripHtmlFromError");
 
 console.log("=== vendor-errors tests passed ===");

@@ -24,6 +24,21 @@ export interface SpendLine {
   included?: boolean;
 }
 
+/** Resume a run after partial completion — skip already-paid steps. */
+export interface RunCheckpoint {
+  goal: string;
+  plan: AgentPlan;
+  budgetUsdc: number;
+  nextStepIndex: number;
+  spend: SpendLine[];
+  toolContext: unknown[];
+}
+
+export function canResumeCheckpoint(cp: RunCheckpoint | null | undefined): boolean {
+  if (!cp) return false;
+  return cp.nextStepIndex > 0 && cp.nextStepIndex < cp.plan.steps.length;
+}
+
 export interface RunResult {
   /** Markdown export — derived deterministically from `document`. */
   deliverable: string;
@@ -46,6 +61,7 @@ export type RunEvent =
   | { type: "step_retry"; step: PlanStep; index: number; attempt: number; reason: string }
   | { type: "payment"; line: SpendLine; remaining: number }
   | { type: "step_done"; step: PlanStep; index: number }
+  | { type: "checkpoint"; checkpoint: RunCheckpoint }
   | { type: "sign_request"; request: SignRequest }
   | { type: "error"; message: string }
   | { type: "done"; result: RunResult };
@@ -59,6 +75,7 @@ export interface RunOptions {
   runId?: string;
   userToolPicks?: string[];
   approvedPlan?: AgentPlan;
+  resumeFrom?: RunCheckpoint;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
 }
@@ -81,17 +98,25 @@ async function executeStep(
 }
 
 async function runAgentInner(options: RunOptions): Promise<RunResult> {
-  const { goal, onEvent, signal, requirePlanApproval = false, runId, userToolPicks, approvedPlan } =
-    options;
-  let budgetUsdc = options.budgetUsdc;
+  const {
+    goal,
+    onEvent,
+    signal,
+    requirePlanApproval = false,
+    runId,
+    userToolPicks,
+    approvedPlan,
+    resumeFrom,
+  } = options;
+  let budgetUsdc = resumeFrom?.budgetUsdc ?? options.budgetUsdc;
   abortController = new AbortController();
   const mergedSignal = signal ?? abortController.signal;
 
   validateGoal(goal);
-  const plan = approvedPlan ?? (await createPlan(goal, { userToolPicks }));
+  const plan = resumeFrom?.plan ?? approvedPlan ?? (await createPlan(goal, { userToolPicks }));
   onEvent?.({ type: "plan", plan });
 
-  if (planHasBlockingProbeFailures(plan.steps)) {
+  if (!resumeFrom && planHasBlockingProbeFailures(plan.steps)) {
     throw new Error(
       "One or more tools failed preflight (vendor down or bad endpoint). Re-check price before running.",
     );
@@ -117,15 +142,26 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
 
   // Fund only for paid x402 tools (compose is free).
   const guard = await fundRunWallet(budgetUsdc);
+  if (resumeFrom) {
+    const priorSpend = resumeFrom.spend
+      .filter((l) => !l.included)
+      .reduce((s, l) => s + l.usdc, 0);
+    guard.seedSpent(priorSpend);
+    console.log(
+      `[run] Resuming from step ${resumeFrom.nextStepIndex + 1}/${plan.steps.length} ` +
+        `($${priorSpend.toFixed(4)} already spent)`,
+    );
+  }
   const uaTopUp = guard.uaTopUp;
   if (uaTopUp) {
     onEvent?.({ type: "ua_topup", transactionId: uaTopUp.transactionId, amountUsdc: uaTopUp.amountUsdc });
   }
 
-  const spend: SpendLine[] = [];
-  const context: unknown[] = [];
+  const spend: SpendLine[] = resumeFrom ? [...resumeFrom.spend] : [];
+  const context: unknown[] = resumeFrom ? [...resumeFrom.toolContext] : [];
   let deliverable = "";
   let document: ReportDocument | null = null;
+  const startIndex = resumeFrom?.nextStepIndex ?? 0;
   const mcpSteps = plan.steps.filter((s) => s.kind === "mcp");
   const allowedToolNames = new Set(
     mcpSteps.map((s) => s.mcpToolName).filter((n): n is string => Boolean(n)),
@@ -136,7 +172,7 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
       : undefined;
 
   try {
-    for (let i = 0; i < plan.steps.length; i++) {
+    for (let i = startIndex; i < plan.steps.length; i++) {
       if (mergedSignal.aborted) throw new Error("Run aborted");
 
       const step = plan.steps[i];
@@ -168,6 +204,17 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
           remaining: await guard.getRemaining(),
         });
         onEvent?.({ type: "step_done", step, index: i });
+        onEvent?.({
+          type: "checkpoint",
+          checkpoint: {
+            goal,
+            plan,
+            budgetUsdc,
+            nextStepIndex: i + 1,
+            spend: [...spend],
+            toolContext: [...context],
+          },
+        });
         continue;
       }
 
@@ -199,6 +246,17 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
         remaining: await guard.getRemaining(),
       });
       onEvent?.({ type: "step_done", step, index: i });
+      onEvent?.({
+        type: "checkpoint",
+        checkpoint: {
+          goal,
+          plan,
+          budgetUsdc,
+          nextStepIndex: i + 1,
+          spend: [...spend],
+          toolContext: [...context],
+        },
+      });
     }
   } finally {
     await mcpSession?.close();

@@ -22,6 +22,7 @@ import { getRunEoaAccount } from "../wallet/eoa.js";
 import { requestDelegatedSignTypedData } from "../wallet/sign-bridge.js";
 import type { BudgetGuard } from "../budget/guard.js";
 import { fetchWithRetry, snapshotRequestInit } from "./http-retry.js";
+import { formatUserFacingError } from "../agent/vendor-errors.js";
 
 export interface PaymentResult {
   usdc: number;
@@ -201,7 +202,9 @@ export async function paidRequest(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`${serviceName} failed (${response.status}): ${text}`);
+    throw new Error(
+      formatUserFacingError(new Error(`${serviceName} failed (${response.status}): ${text}`)),
+    );
   }
 
   const { usdc, txHash, network } = extractSettlement(

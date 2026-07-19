@@ -4,7 +4,7 @@ import type { CatalogTool } from "./tool-catalog.js";
 import type { PlanStep } from "./plan.js";
 import { paidRequest, type PaymentResult } from "../services/x402-client.js";
 import type { BudgetGuard } from "../budget/guard.js";
-import { classifyVendorError } from "./vendor-errors.js";
+import { classifyVendorError, formatUserFacingError } from "./vendor-errors.js";
 
 const VERIFY_FAILURE_RE = /x402_verify_failed|payment signature could not be verified|invalid_exact_evm_payload_signature/i;
 
@@ -75,7 +75,11 @@ export async function executePaidToolStep(
         label: step.label,
       });
       const { url, init } = buildHttpToolRequest(tool, proxyArgs);
-      return paidRequest(url, init, guard, step.label);
+      try {
+        return await paidRequest(url, init, guard, step.label);
+      } catch (retryErr) {
+        throw new Error(formatUserFacingError(retryErr));
+      }
     }
 
     const classified = classifyVendorError(mcpErr);
