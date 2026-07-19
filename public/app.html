@@ -118,6 +118,65 @@
             <ul id="estimate-catalog-list" class="estimate-alt-list catalog-pick-list"></ul>
           </details>
           <p id="estimate-total" class="estimate-total"></p>
+
+          <section id="budget-control" class="budget-control" hidden aria-labelledby="budget-control-title">
+            <div class="budget-control-head">
+              <div>
+                <h4 id="budget-control-title" class="budget-control-title">Run limit</h4>
+                <p class="budget-control-lead">Maximum USDC this run can spend on paid tools. You approve this before anything executes.</p>
+              </div>
+              <div class="budget-est-pill" aria-label="Estimated cost">
+                <span class="budget-est-pill-label">Estimated</span>
+                <span id="budget-est-cost" class="budget-est-pill-value">—</span>
+              </div>
+            </div>
+
+            <div class="budget-input-wrap">
+              <label class="sr-only" for="run-budget-input">Run limit in USDC</label>
+              <span class="budget-input-prefix" aria-hidden="true">$</span>
+              <input
+                id="run-budget-input"
+                class="budget-input"
+                type="number"
+                inputmode="decimal"
+                min="0.01"
+                max="5"
+                step="0.01"
+                value="0.15"
+                autocomplete="off"
+              />
+              <span class="budget-input-suffix" aria-hidden="true">USDC</span>
+            </div>
+
+            <div class="budget-presets" role="group" aria-label="Quick limit presets">
+              <button type="button" class="budget-preset" data-budget-preset="minimum">
+                <span class="budget-preset-label">Minimum</span>
+                <span id="budget-preset-min" class="budget-preset-value">—</span>
+              </button>
+              <button type="button" class="budget-preset budget-preset--recommended" data-budget-preset="recommended">
+                <span class="budget-preset-label">Recommended</span>
+                <span id="budget-preset-rec" class="budget-preset-value">—</span>
+              </button>
+              <button type="button" class="budget-preset" data-budget-preset="comfortable">
+                <span class="budget-preset-label">Comfortable</span>
+                <span id="budget-preset-comfort" class="budget-preset-value">—</span>
+              </button>
+            </div>
+
+            <div class="budget-cap-visual" aria-hidden="true">
+              <div class="budget-cap-track">
+                <div id="budget-cap-est-fill" class="budget-cap-est-fill"></div>
+                <div id="budget-cap-limit-fill" class="budget-cap-limit-fill"></div>
+              </div>
+              <div class="budget-cap-legend">
+                <span><i class="budget-cap-swatch budget-cap-swatch--est"></i> Estimate</span>
+                <span><i class="budget-cap-swatch budget-cap-swatch--limit"></i> Your limit</span>
+              </div>
+            </div>
+
+            <p id="budget-control-status" class="budget-control-status budget-control-status--ok" role="status"></p>
+          </section>
+
           <p id="estimate-budget-warn" class="estimate-budget-warn" hidden></p>
           <button id="run-btn" type="button" class="btn btn-primary btn-lg" hidden>Start run →</button>
         </article>
@@ -297,8 +356,8 @@
 
         <div class="settings-group">
           <label for="settings-default-budget">Default run limit</label>
-          <input id="settings-default-budget" type="number" min="0.01" step="0.01" value="0.15" />
-          <p class="field-note">Used when a template does not include a price. Each run uses the estimate when available.</p>
+          <input id="settings-default-budget" type="number" min="0.01" max="5" step="0.01" value="0.15" />
+          <p class="field-note">Starting limit when you check price. You can always change it on the plan card before starting a run.</p>
         </div>
 
         <div class="settings-group">

@@ -15,7 +15,19 @@ import {
   formatUsdc,
 } from "./js/utils.js";
 import { renderDeliverable } from "./js/report-renderer.js";
-import { fetchBalance, renderBalanceHtml, renderDepositPanelHtml, showFundModal, wireFundModal, pickDepositAddress, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
+import {
+  clampRunBudget,
+  comfortableRunBudget,
+  DEFAULT_RUN_BUDGET_USDC,
+  evaluateRunBudget,
+  formatBudget,
+  MAX_RUN_BUDGET_USDC,
+  MIN_RUN_BUDGET_USDC,
+  minimumRunBudget,
+  parseRunBudgetInput,
+  recommendedRunBudget,
+} from "./js/budget.js";
+import { fetchBalance, renderBalanceHtml, renderDepositPanelHtml, showFundModal, wireFundModal, pickDepositAddress, pickAvailableCredit, isSessionExpiredError, renderSessionExpiredHtml } from "./js/balance.js";
 import { closeDialogsBeforeMagicUi } from "./js/magic-ui.js";
 import {
   fetchHistory,
@@ -86,6 +98,15 @@ const estimateCatalogList = document.getElementById("estimate-catalog-list");
 const userToolPicksInput = document.getElementById("user-tool-picks");
 const estimateTotal = document.getElementById("estimate-total");
 const estimateBudgetWarn = document.getElementById("estimate-budget-warn");
+const budgetControl = document.getElementById("budget-control");
+const runBudgetInput = document.getElementById("run-budget-input");
+const budgetEstCost = document.getElementById("budget-est-cost");
+const budgetPresetMin = document.getElementById("budget-preset-min");
+const budgetPresetRec = document.getElementById("budget-preset-rec");
+const budgetPresetComfort = document.getElementById("budget-preset-comfort");
+const budgetCapEstFill = document.getElementById("budget-cap-est-fill");
+const budgetCapLimitFill = document.getElementById("budget-cap-limit-fill");
+const budgetControlStatus = document.getElementById("budget-control-status");
 const runBtn = document.getElementById("run-btn");
 const stopBtn = document.getElementById("stop-btn");
 const againBtn = document.getElementById("again-btn");
@@ -164,6 +185,8 @@ let runAborted = false;
 let appConfig = null;
 let lastEstimate = null;
 let lastEstimateGoal = "";
+let activeBudgetPreset = "recommended";
+let pendingLaunchBudget = null;
 let selectedCatalogPicks = new Set();
 let lastResultRunId = null;
 
@@ -321,9 +344,138 @@ async function applyRoute(route, { fromPopstate = false } = {}) {
 }
 
 function applyBudgetFromSearch(search) {
-  if (!search || !budgetInput) return;
-  const parsed = parseFloat(new URLSearchParams(search).get("budget"));
-  if (Number.isFinite(parsed) && parsed > 0) budgetInput.value = String(parsed);
+  if (!search) return;
+  const parsed = parseRunBudgetInput(new URLSearchParams(search).get("budget"));
+  if (parsed != null) pendingLaunchBudget = parsed;
+}
+
+function getWalletCredit() {
+  if (!lastBalances) return null;
+  return pickAvailableCredit(lastBalances);
+}
+
+function getSelectedRunBudget() {
+  const fromInput = parseRunBudgetInput(runBudgetInput?.value ?? budgetInput?.value);
+  return fromInput ?? DEFAULT_RUN_BUDGET_USDC;
+}
+
+function setRunBudgetValue(usdc, { preset = null } = {}) {
+  const clamped = clampRunBudget(usdc);
+  if (runBudgetInput) runBudgetInput.value = clamped.toFixed(2);
+  if (budgetInput) budgetInput.value = String(clamped);
+  if (preset) activeBudgetPreset = preset;
+  document.querySelectorAll("[data-budget-preset]").forEach((btn) => {
+    btn.classList.toggle("budget-preset--active", btn.dataset.budgetPreset === activeBudgetPreset);
+  });
+  refreshBudgetControlStatus();
+}
+
+function updateBudgetCapVisual(estimatedCost, runLimit) {
+  if (!budgetCapEstFill || !budgetCapLimitFill) return;
+  const est = Number(estimatedCost) || 0;
+  const limit = Number(runLimit) || DEFAULT_RUN_BUDGET_USDC;
+  const scale = Math.max(est, limit, 0.01);
+  const estPct = est > 0 ? Math.min(100, (est / scale) * 100) : 0;
+  const limitPct = Math.min(100, (limit / scale) * 100);
+  budgetCapEstFill.style.width = `${estPct}%`;
+  budgetCapLimitFill.style.width = `${limitPct}%`;
+}
+
+function refreshBudgetControlStatus() {
+  if (!lastEstimate?.plan || !budgetControlStatus) return;
+  const est = lastEstimate.plan.totalEstUsdc;
+  const limit = getSelectedRunBudget();
+  const result = evaluateRunBudget({
+    runLimit: limit,
+    estimatedCost: est,
+    walletCredit: getWalletCredit(),
+  });
+
+  budgetControlStatus.textContent = result.message;
+  budgetControlStatus.className = `budget-control-status budget-control-status--${result.state}`;
+
+  if (estimateBudgetWarn) {
+    estimateBudgetWarn.hidden = true;
+    estimateBudgetWarn.textContent = "";
+  }
+
+  if (runBtn) {
+    runBtn.disabled = !result.canRun;
+    runBtn.textContent = result.canRun
+      ? `Start run · ${formatBudget(limit)} limit →`
+      : "Raise limit to continue";
+  }
+  updateBudgetCapVisual(est, limit);
+}
+
+function applyBudgetPreset(preset) {
+  if (!lastEstimate?.plan) return;
+  const est = lastEstimate.plan.totalEstUsdc;
+  let value = recommendedRunBudget(est);
+  if (preset === "minimum") value = minimumRunBudget(est);
+  else if (preset === "comfortable") value = comfortableRunBudget(est);
+  else if (preset === "recommended") value = recommendedRunBudget(est);
+  setRunBudgetValue(value, { preset });
+}
+
+function renderBudgetControl(estimate) {
+  if (!budgetControl || !runBudgetInput) return;
+
+  const est = estimate.plan.totalEstUsdc;
+  const min = minimumRunBudget(est);
+  const rec = recommendedRunBudget(est);
+  const comfort = comfortableRunBudget(est);
+
+  if (budgetEstCost) budgetEstCost.textContent = formatBudget(est);
+  if (budgetPresetMin) budgetPresetMin.textContent = formatBudget(min);
+  if (budgetPresetRec) budgetPresetRec.textContent = formatBudget(rec);
+  if (budgetPresetComfort) budgetPresetComfort.textContent = formatBudget(comfort);
+
+  runBudgetInput.min = String(MIN_RUN_BUDGET_USDC);
+  runBudgetInput.max = String(MAX_RUN_BUDGET_USDC);
+
+  const settings = loadSettings();
+  const defaultBudget = parseRunBudgetInput(settings.defaultBudget) ?? DEFAULT_RUN_BUDGET_USDC;
+  const launchBudget = pendingLaunchBudget != null ? pendingLaunchBudget : null;
+  pendingLaunchBudget = null;
+
+  let initial = rec;
+  if (launchBudget != null && launchBudget >= min) initial = launchBudget;
+  else if (defaultBudget >= min) initial = Math.max(defaultBudget, rec);
+
+  const preset =
+    Math.abs(initial - min) < 0.005
+      ? "minimum"
+      : Math.abs(initial - comfort) < 0.005
+        ? "comfortable"
+        : "recommended";
+
+  setRunBudgetValue(initial, { preset });
+  budgetControl.hidden = false;
+}
+
+function wireBudgetControl() {
+  runBudgetInput?.addEventListener("input", () => {
+    activeBudgetPreset = "custom";
+    document.querySelectorAll("[data-budget-preset]").forEach((btn) => {
+      btn.classList.toggle("budget-preset--active", false);
+    });
+    refreshBudgetControlStatus();
+  });
+
+  runBudgetInput?.addEventListener("change", () => {
+    const parsed = parseRunBudgetInput(runBudgetInput.value);
+    if (parsed == null) {
+      showToast("Enter a valid limit between $0.01 and $5.00 USDC.", { type: "warning" });
+      if (lastEstimate?.plan) setRunBudgetValue(recommendedRunBudget(lastEstimate.plan.totalEstUsdc), { preset: "recommended" });
+      return;
+    }
+    setRunBudgetValue(parsed);
+  });
+
+  document.querySelectorAll("[data-budget-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => applyBudgetPreset(btn.dataset.budgetPreset));
+  });
 }
 
 function openFundFlow() {
@@ -521,6 +673,7 @@ async function refreshBalances(targetEl) {
     const balances = await fetchBalance(didToken);
     lastBalances = balances;
     targetEl.innerHTML = renderBalanceHtml(balances);
+    if (lastEstimate?.plan) refreshBudgetControlStatus();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message === "SESSION_EXPIRED" || isSessionExpiredError(message)) {
@@ -640,8 +793,10 @@ async function refreshAnalytics() {
 
 async function refreshSettings() {
   const settings = loadSettings();
-  const budget = Number(settings.defaultBudget ?? 0.1);
-  settingsDefaultBudget.value = Number.isFinite(budget) ? Math.min(budget, 0.1).toFixed(2) : "0.10";
+  const budget = parseRunBudgetInput(settings.defaultBudget) ?? DEFAULT_RUN_BUDGET_USDC;
+  settingsDefaultBudget.value = budget.toFixed(2);
+  settingsDefaultBudget.min = String(MIN_RUN_BUDGET_USDC);
+  settingsDefaultBudget.max = String(MAX_RUN_BUDGET_USDC);
   settingsTheme.value = settings.theme ?? "light";
   settingsNotifications.checked = Boolean(settings.notifications);
 
@@ -883,9 +1038,11 @@ async function handleSignRequest(request) {
 
 function hideEstimate() {
   if (estimateCard) estimateCard.hidden = true;
+  if (budgetControl) budgetControl.hidden = true;
   if (runBtn) {
     runBtn.hidden = true;
     runBtn.disabled = false;
+    runBtn.textContent = "Start run →";
   }
   if (estimateBudgetWarn) {
     estimateBudgetWarn.hidden = true;
@@ -893,6 +1050,7 @@ function hideEstimate() {
   }
   lastEstimate = null;
   lastEstimateGoal = "";
+  activeBudgetPreset = "recommended";
 }
 
 function parseUserToolPicks() {
@@ -944,17 +1102,7 @@ function renderCatalogPicker(catalog) {
 }
 
 function syncRunBudgetFromEstimate(estimate) {
-  budgetInput.value = String(estimate.suggestedBudget);
-  if (!estimateBudgetWarn) return;
-  if (estimate.suggestedBudget < estimate.totalEstUsdc) {
-    estimateBudgetWarn.hidden = false;
-    estimateBudgetWarn.textContent = "Estimated cost exceeds the run limit. Check price again or raise your default limit in Settings.";
-    runBtn.disabled = true;
-  } else {
-    estimateBudgetWarn.hidden = true;
-    estimateBudgetWarn.textContent = "";
-    runBtn.disabled = false;
-  }
+  renderBudgetControl(estimate);
 }
 
 function renderEstimate(estimate) {
@@ -1017,7 +1165,7 @@ function renderEstimate(estimate) {
 
   estimateTotal.innerHTML =
     `Paid tools: <strong>${formatUsdc(estimate.totalEstUsdc)}</strong> · ` +
-    `compose included free · run limit <strong>${formatUsdc(estimate.suggestedBudget)}</strong>`;
+    `compose included free`;
   estimateCard.hidden = false;
   runBtn.hidden = false;
 }
@@ -1070,12 +1218,14 @@ async function startRun() {
     return;
   }
 
-  const budget = Math.min(Number(lastEstimate.suggestedBudget) || 0.1, 0.1);
+  const budget = getSelectedRunBudget();
   if (budget < lastEstimate.plan.totalEstUsdc) {
     showToast(
-      `Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`,
+      `Run limit ${formatBudget(budget)} is below the estimated ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Raise the limit to continue.`,
       { type: "warning" },
     );
+    refreshBudgetControlStatus();
+    runBudgetInput?.focus();
     return;
   }
   budgetInput.value = String(budget);
@@ -1359,7 +1509,7 @@ saveAgentBtn?.addEventListener("click", async () => {
       name,
       description: "Custom saved agent",
       goal,
-      suggestedBudget: Math.min(parseFloat(budgetInput.value) || 0.1, 0.1),
+      suggestedBudget: getSelectedRunBudget(),
     });
     await loadCustomAgents();
   } catch (err) {
@@ -1368,7 +1518,14 @@ saveAgentBtn?.addEventListener("click", async () => {
 });
 
 settingsDefaultBudget?.addEventListener("change", () => {
-  saveSettings({ defaultBudget: Math.min(parseFloat(settingsDefaultBudget.value) || 0.1, 0.1) });
+  const parsed = parseRunBudgetInput(settingsDefaultBudget.value);
+  if (parsed == null) {
+    showToast("Default limit must be between $0.01 and $5.00 USDC.", { type: "warning" });
+    settingsDefaultBudget.value = DEFAULT_RUN_BUDGET_USDC.toFixed(2);
+    return;
+  }
+  saveSettings({ defaultBudget: parsed });
+  settingsDefaultBudget.value = parsed.toFixed(2);
 });
 
 settingsTheme?.addEventListener("change", () => {
@@ -1445,6 +1602,7 @@ goalInput?.addEventListener("input", () => {
 });
 
 applyBudgetFromSearch(window.location.search);
+wireBudgetControl();
 
 initRouter((route, meta) => applyRoute(route, { fromPopstate: meta.fromPopstate }));
 

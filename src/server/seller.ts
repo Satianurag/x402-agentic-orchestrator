@@ -447,6 +447,11 @@ app.post("/run", async (req, res) => {
     res.status(400).json({ error: "budget must be a positive number (USDC)" });
     return;
   }
+  const MAX_RUN_BUDGET_USDC = 5;
+  if (budgetUsdc > MAX_RUN_BUDGET_USDC) {
+    res.status(400).json({ error: `budget cannot exceed $${MAX_RUN_BUDGET_USDC.toFixed(2)} USDC per run` });
+    return;
+  }
 
   const runId = randomUUID();
   let userAddress: `0x${string}` | null = null;

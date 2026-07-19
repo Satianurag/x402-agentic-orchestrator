@@ -12,7 +12,10 @@ export interface RunEstimate {
   thoughts: string;
   warnings: PlannerWarning[];
   totalEstUsdc: number;
+  /** Lowest limit that can cover paid steps (no buffer). */
+  minimumBudget: number;
   suggestedBudget: number;
+  maxRunBudget: number;
   probedAt: string;
 }
 
@@ -30,10 +33,11 @@ export async function createRunEstimate(
   validateGoal(trimmed);
 
   const plan = await createPlan(trimmed, { userToolPicks: options.userToolPicks });
-  // Cap = estimate + 25%, rounded up to 1¢, hard-capped at $0.10 for probe runs.
-  const suggestedBudget = Math.min(
-    0.1,
-    Math.max(Math.ceil(plan.totalEstUsdc * 1.25 * 100) / 100, 0.01),
+  const minimumBudget = Math.max(plan.totalEstUsdc, 0.01);
+  // Recommended = estimate + 25%, rounded up to 1¢.
+  const suggestedBudget = Math.max(
+    Math.ceil(plan.totalEstUsdc * 1.25 * 100) / 100,
+    minimumBudget,
   );
 
   return {
@@ -45,7 +49,9 @@ export async function createRunEstimate(
     thoughts: plan.thoughts,
     warnings: plan.warnings,
     totalEstUsdc: plan.totalEstUsdc,
+    minimumBudget,
     suggestedBudget,
+    maxRunBudget: 5,
     probedAt: new Date().toISOString(),
   };
 }
