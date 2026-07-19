@@ -3,9 +3,12 @@ import {
   discoverToolCatalogForPlanning,
   effectiveUsdc,
   findCatalogTool,
-  probeSelectedTools,
   type CatalogTool,
 } from "./tool-catalog.js";
+import { probePlanSteps } from "./tool-probe.js";
+import type { ProbeHealth } from "./probe-health.js";
+
+export type { ProbeHealth };
 import { applyPlannerGuards } from "./planner-guards.js";
 import { planToolsWithLlm, type PlannerResult, type PlannerWarning } from "./tool-planner.js";
 
@@ -22,6 +25,10 @@ export interface PlanStep {
   mcpToolName?: string;
   proxyParameters?: Record<string, unknown>;
   why?: string;
+  /** $0 preflight against live HTTP 402 (when URL known). */
+  probeHealth?: ProbeHealth;
+  probeDetail?: string;
+  probeHttpStatus?: number | null;
 }
 
 export interface AgentPlan {
@@ -118,14 +125,11 @@ export async function createPlan(goal: string, options: CreatePlanOptions = {}):
     );
   }
 
-  const selectedNames = new Set(planner.selectedTools.map((t) => t.mcpToolName));
-  const toProbe = catalog.filter((t) => selectedNames.has(t.mcpToolName));
-  const probedCatalog = await probeSelectedTools(toProbe, trimmed);
-
-  const probedMap = new Map(probedCatalog.map((t) => [t.mcpToolName, t]));
-  const mergedCatalog = catalog.map((t) => probedMap.get(t.mcpToolName) ?? t);
-
-  const paidToolSteps = planner.selectedTools.map((pick) => mcpStepFromPick(pick, mergedCatalog));
+  const paidToolSteps = planner.selectedTools.map((pick) => mcpStepFromPick(pick, catalog));
+  const { steps: probedPaidSteps, catalog: mergedCatalog } = await probePlanSteps(
+    paidToolSteps,
+    catalog,
+  );
 
   // Deterministic compose — $0 on user x402 ledger.
   const composeStep: PlanStep = {
@@ -137,8 +141,8 @@ export async function createPlan(goal: string, options: CreatePlanOptions = {}):
     why: "Structured report from paid tool JSON — no LLM, all links from verified data.",
   };
 
-  const steps = [...paidToolSteps, composeStep];
-  const totalEstUsdc = paidToolSteps.reduce((sum, s) => sum + s.estCostUsdc, 0);
+  const steps = [...probedPaidSteps, composeStep];
+  const totalEstUsdc = probedPaidSteps.reduce((sum, s) => sum + s.estCostUsdc, 0);
 
   return {
     goal: trimmed,

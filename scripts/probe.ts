@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /** Live 402 probe via Bazaar catalog + synthesize seller. */
 import "dotenv/config";
-import { discoverToolCatalog, probeSelectedTools } from "../src/agent/tool-catalog.js";
+import { discoverToolCatalog } from "../src/agent/tool-catalog.js";
+import { probeToolForPlan } from "../src/agent/tool-probe.js";
 import { synthesizeEstimateCost } from "../src/services/seller.js";
 
 const SAMPLE_GOAL = process.env.PROBE_GOAL ?? "web search news about AI agents";
@@ -9,11 +10,13 @@ const SAMPLE_GOAL = process.env.PROBE_GOAL ?? "web search news about AI agents";
 async function main() {
   console.log(`Probing Bazaar catalog for: "${SAMPLE_GOAL}"\n`);
   const catalog = await discoverToolCatalog(SAMPLE_GOAL, 5);
-  const probed = await probeSelectedTools(catalog.slice(0, 3), SAMPLE_GOAL);
 
-  for (const t of probed) {
-    const price = t.probeUsdc ?? t.catalogUsdc;
-    console.log(`${t.displayName}: ${price != null ? `$${price.toFixed(6)}` : "no price"} (${t.mcpToolName.slice(0, 48)}…)`);
+  for (const t of catalog.slice(0, 3)) {
+    const outcome = await probeToolForPlan(t, t.exampleInput ?? { query: SAMPLE_GOAL });
+    const price = outcome.probeUsdc ?? t.catalogUsdc;
+    console.log(
+      `${t.displayName}: health=${outcome.health} ${price != null ? `$${price.toFixed(6)}` : "no price"} — ${outcome.detail}`,
+    );
   }
 
   const synth = await synthesizeEstimateCost();

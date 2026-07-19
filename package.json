@@ -18,7 +18,8 @@
     "probe": "tsx scripts/probe.ts",
     "test:estimate": "tsx scripts/test-discovery-probe.ts",
     "test:report": "tsx scripts/test-build-report.ts",
-    "test:budget": "node scripts/test-budget.mjs"
+    "test:budget": "node scripts/test-budget.mjs",
+    "test:vendor": "tsx scripts/test-vendor-errors.ts"
   },
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.53.0",

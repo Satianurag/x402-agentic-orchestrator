@@ -20,6 +20,7 @@ import {
   comfortableRunBudget,
   DEFAULT_RUN_BUDGET_USDC,
   evaluateRunBudget,
+  evaluateProbeGate,
   formatBudget,
   MAX_RUN_BUDGET_USDC,
   MIN_RUN_BUDGET_USDC,
@@ -385,27 +386,56 @@ function refreshBudgetControlStatus() {
   if (!lastEstimate?.plan || !budgetControlStatus) return;
   const est = lastEstimate.plan.totalEstUsdc;
   const limit = getSelectedRunBudget();
-  const result = evaluateRunBudget({
+  const budgetResult = evaluateRunBudget({
     runLimit: limit,
     estimatedCost: est,
     walletCredit: getWalletCredit(),
   });
+  const probeResult = evaluateProbeGate({
+    probeGateOk: lastEstimate.probeGateOk,
+    probeFailures: lastEstimate.probeFailures,
+  });
 
-  budgetControlStatus.textContent = result.message;
-  budgetControlStatus.className = `budget-control-status budget-control-status--${result.state}`;
+  const canRun = budgetResult.canRun && probeResult.canRun;
+  const state = !probeResult.canRun ? probeResult.state : budgetResult.state;
+  const message = !probeResult.canRun ? probeResult.message : budgetResult.message;
+
+  budgetControlStatus.textContent = message;
+  budgetControlStatus.className = `budget-control-status budget-control-status--${state}`;
 
   if (estimateBudgetWarn) {
-    estimateBudgetWarn.hidden = true;
-    estimateBudgetWarn.textContent = "";
+    if (!probeResult.canRun) {
+      estimateBudgetWarn.hidden = false;
+      estimateBudgetWarn.textContent = probeResult.message;
+    } else {
+      estimateBudgetWarn.hidden = true;
+      estimateBudgetWarn.textContent = "";
+    }
   }
 
   if (runBtn) {
-    runBtn.disabled = !result.canRun;
-    runBtn.textContent = result.canRun
+    runBtn.disabled = !canRun;
+    runBtn.textContent = canRun
       ? `Start run · ${formatBudget(limit)} limit →`
-      : "Raise limit to continue";
+      : !probeResult.canRun
+        ? "Fix preflight to continue"
+        : "Raise limit to continue";
   }
   updateBudgetCapVisual(est, limit);
+}
+
+function probeHealthBadge(step) {
+  if (step.kind === "compose") return "";
+  const health = step.probeHealth;
+  if (!health) return "";
+  const labels = {
+    ready: "Preflight OK",
+    unverified: "MCP only",
+    unavailable: "Unavailable",
+  };
+  const cls = `probe-badge probe-badge--${health}`;
+  const title = step.probeDetail ? ` title="${escapeHtml(step.probeDetail)}"` : "";
+  return `<span class="${cls}"${title}>${labels[health] ?? health}</span>`;
 }
 
 function applyBudgetPreset(preset) {
@@ -1151,12 +1181,17 @@ function renderEstimate(estimate) {
     estimate.plan.steps
       .map((step) => {
         const label = stepLabel(step);
+        const badge = probeHealthBadge(step);
         const why = step.why ? `<p class="plan-step-why">${escapeHtml(step.why)}</p>` : "";
+        const probeNote =
+          step.probeDetail && step.probeHealth !== "ready"
+            ? `<p class="plan-step-probe">${escapeHtml(step.probeDetail)}</p>`
+            : "";
         const cost =
           step.kind === "compose" || step.estCostUsdc === 0
             ? `<span class="plan-step-included">Included · $0</span>`
             : `<span>$${Number(step.estCostUsdc).toFixed(4)}</span>`;
-        return `<div class="plan-step-row"><span>${escapeHtml(label)}</span>${cost}</div>${why}`;
+        return `<div class="plan-step-row"><span>${escapeHtml(label)} ${badge}</span>${cost}</div>${why}${probeNote}`;
       })
       .join("") +
     `<div class="plan-step-row plan-step-row--total"><span>Paid x402 total</span><span>$${estimate.totalEstUsdc.toFixed(4)}</span></div>`;
@@ -1215,6 +1250,15 @@ async function startRun() {
   }
   if (!lastEstimate?.plan) {
     showToast("Check the price and plan before starting a run.", { type: "warning" });
+    return;
+  }
+  if (lastEstimate.probeGateOk === false) {
+    const probe = evaluateProbeGate({
+      probeGateOk: lastEstimate.probeGateOk,
+      probeFailures: lastEstimate.probeFailures,
+    });
+    showToast(probe.message, { type: "error" });
+    refreshBudgetControlStatus();
     return;
   }
 
@@ -1297,6 +1341,8 @@ async function startRun() {
           } else {
             appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash} · $${event.remaining.toFixed(4)} left`);
           }
+        } else if (event.type === "step_retry") {
+          appendLog(`  ↻ retry ${event.attempt}: ${event.reason}`);
         } else if (event.type === "step_done") {
           setStepState(stepLabel(event.step), "settled");
           appendLog(`  ✓ ${stepLabel(event.step)} settled`);

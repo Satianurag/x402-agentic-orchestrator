@@ -1,6 +1,6 @@
 import { atomicToUsdc, getPaymentCaip2 } from "../config/chains.js";
-import { probeQuote } from "../services/x402-client.js";
 import { mcpSearchResources } from "./bazaar-mcp.js";
+import type { ProbeHealth } from "./probe-health.js";
 import {
   matchDiscoveryResourceUrl,
   searchDiscoveryResources,
@@ -28,6 +28,9 @@ export interface CatalogTool {
   /** Example body/query from Bazaar discovery extension. */
   exampleInput: Record<string, unknown> | null;
   curated: boolean;
+  probeHealth?: ProbeHealth;
+  probeDetail?: string | null;
+  probeHttpStatus?: number | null;
 }
 
 type McpToolRaw = {
@@ -172,38 +175,6 @@ export function parseMcpCatalogTools(result: unknown): CatalogTool[] {
   }
 }
 
-async function probeCatalogTool(tool: CatalogTool, goal: string): Promise<CatalogTool> {
-  const endpoint = tool.resourceUrl ?? tool.httpResource;
-  if (!endpoint) return tool;
-
-  const method = tool.httpMethod ?? (tool.mcpToolName.startsWith("x402_get_") ? "GET" : "POST");
-  let url = endpoint;
-  let init: RequestInit;
-
-  if (method === "GET") {
-    const u = new URL(url);
-    if (!u.searchParams.has("q") && !u.searchParams.has("query")) {
-      u.searchParams.set("query", goal.slice(0, 80));
-    }
-    url = u.toString();
-    init = { method: "GET" };
-  } else {
-    const body = tool.exampleInput ?? { query: goal.slice(0, 200) };
-    init = {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    };
-  }
-
-  try {
-    const q = await probeQuote(url, init, tool.displayName);
-    return { ...tool, probeUsdc: q.usdc, network: q.network };
-  } catch {
-    return tool;
-  }
-}
-
 /** Discover Bazaar MCP tools for a goal (semantic search + dedupe). */
 export async function discoverToolCatalog(goal: string, limit = 24): Promise<CatalogTool[]> {
   const result = await mcpSearchResources(goal);
@@ -264,18 +235,6 @@ export async function discoverToolCatalogForPlanning(
   }
 
   return enrichToolsWithDiscovery(out.slice(0, limit), discoveryRows);
-}
-
-/** Live 402 probe on planner-selected tools (best-effort). */
-export async function probeSelectedTools(
-  tools: CatalogTool[],
-  goal: string,
-): Promise<CatalogTool[]> {
-  const probed: CatalogTool[] = [];
-  for (const tool of tools) {
-    probed.push(await probeCatalogTool(tool, goal));
-  }
-  return probed;
 }
 
 export function findCatalogTool(catalog: CatalogTool[], mcpToolName: string): CatalogTool | undefined {

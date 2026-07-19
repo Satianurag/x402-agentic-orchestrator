@@ -4,11 +4,16 @@ import type { CatalogTool } from "./tool-catalog.js";
 import type { PlanStep } from "./plan.js";
 import { paidRequest, type PaymentResult } from "../services/x402-client.js";
 import type { BudgetGuard } from "../budget/guard.js";
+import { classifyVendorError } from "./vendor-errors.js";
 
 const VERIFY_FAILURE_RE = /x402_verify_failed|payment signature could not be verified|invalid_exact_evm_payload_signature/i;
 
 export function isPaymentVerifyFailure(message: string): boolean {
   return VERIFY_FAILURE_RE.test(message);
+}
+
+export interface ExecutePaidToolOptions {
+  onRetry?: (info: { attempt: number; reason: string; label: string }) => void;
 }
 
 /**
@@ -20,6 +25,7 @@ export async function executePaidToolStep(
   tool: CatalogTool | undefined,
   mcpSession: BazaarMcpSession | undefined,
   guard: BudgetGuard,
+  options: ExecutePaidToolOptions = {},
 ): Promise<PaymentResult> {
   if (!step.mcpToolName) {
     throw new Error(`Paid step "${step.label}" is missing mcpToolName`);
@@ -27,6 +33,7 @@ export async function executePaidToolStep(
 
   const proxyArgs = step.proxyParameters ?? {};
   const canHttp = Boolean(tool?.resourceUrl);
+  const { onRetry } = options;
 
   if (canHttp && tool) {
     try {
@@ -34,7 +41,11 @@ export async function executePaidToolStep(
       console.log(`[x402-http] ${step.label}: live 402 → ${url}`);
       return await paidRequest(url, init, guard, step.label);
     } catch (httpErr) {
+      const classified = classifyVendorError(httpErr);
       const httpMessage = httpErr instanceof Error ? httpErr.message : String(httpErr);
+      if (classified.retryable) {
+        onRetry?.({ attempt: 1, reason: classified.userMessage, label: step.label });
+      }
       console.warn(`[x402-http] ${step.label} failed (${httpMessage.slice(0, 160)}) — trying MCP proxy`);
     }
   }
@@ -58,10 +69,16 @@ export async function executePaidToolStep(
       console.warn(
         `[x402-mcp] ${step.label}: verify failed on MCP proxy — retrying live HTTP`,
       );
+      onRetry?.({
+        attempt: 2,
+        reason: "MCP verify failed — retrying live HTTP",
+        label: step.label,
+      });
       const { url, init } = buildHttpToolRequest(tool, proxyArgs);
       return paidRequest(url, init, guard, step.label);
     }
 
-    throw mcpErr;
+    const classified = classifyVendorError(mcpErr);
+    throw new Error(classified.userMessage);
   }
 }

@@ -43,6 +43,20 @@ export function parseRunBudgetInput(raw) {
 /**
  * @returns {{ state: 'ok'|'warn'|'error', message: string, canRun: boolean }}
  */
+export function evaluateProbeGate({ probeGateOk = true, probeFailures = [] } = {}) {
+  if (probeGateOk !== false) {
+    return { state: "ok", message: "", canRun: true };
+  }
+  const first = probeFailures[0];
+  const message = first
+    ? `Preflight blocked: ${first.service} — ${first.detail}`
+    : "One or more tools failed preflight. Re-check price or pick another tool.";
+  return { state: "error", message, canRun: false };
+}
+
+/**
+ * @returns {{ state: 'ok'|'warn'|'error', message: string, canRun: boolean }}
+ */
 export function evaluateRunBudget({ runLimit, estimatedCost, walletCredit }) {
   const limit = parseRunBudgetInput(runLimit);
   if (limit == null) {

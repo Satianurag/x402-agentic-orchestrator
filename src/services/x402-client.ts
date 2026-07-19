@@ -21,6 +21,7 @@ import { getRunContext } from "../wallet/run-context.js";
 import { getRunEoaAccount } from "../wallet/eoa.js";
 import { requestDelegatedSignTypedData } from "../wallet/sign-bridge.js";
 import type { BudgetGuard } from "../budget/guard.js";
+import { fetchWithRetry } from "./http-retry.js";
 
 export interface PaymentResult {
   usdc: number;
@@ -108,7 +109,31 @@ export function createX402PaymentClient(budgetGuard?: BudgetGuard) {
   return client;
 }
 
-export function createX402Fetch(budgetGuard?: BudgetGuard) {
+/** Retry vendor 5xx/timeouts on the unpaid request only — never after payment headers are attached. */
+function createResilientFetch(label: string): typeof fetch {
+  return async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    const hasPayment =
+      req.headers.has("payment-signature") ||
+      req.headers.has("PAYMENT-SIGNATURE") ||
+      req.headers.has("x-payment") ||
+      req.headers.has("X-PAYMENT");
+    if (hasPayment) return fetch(input, init);
+
+    return fetchWithRetry(
+      req.url,
+      {
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        ...(init ?? {}),
+      },
+      { label, attempts: 3 },
+    );
+  };
+}
+
+export function createX402Fetch(budgetGuard?: BudgetGuard, serviceLabel = "x402") {
   const client = createX402PaymentClient(budgetGuard);
   /** Signed exact-scheme amount from PaymentPayload.accepted (requirements.amount). */
   let authorizedAmountAtomic: string | undefined;
@@ -117,7 +142,7 @@ export function createX402Fetch(budgetGuard?: BudgetGuard) {
   });
 
   return {
-    paidFetch: wrapFetchWithPayment(fetch, client),
+    paidFetch: wrapFetchWithPayment(createResilientFetch(serviceLabel), client),
     httpClient: new x402HTTPClient(client),
     getAuthorizedAmountAtomic: () => authorizedAmountAtomic,
   };
@@ -160,7 +185,7 @@ export async function paidRequest(
   budgetGuard: BudgetGuard,
   serviceName: string,
 ): Promise<PaymentResult> {
-  const { paidFetch, httpClient, getAuthorizedAmountAtomic } = createX402Fetch(budgetGuard);
+  const { paidFetch, httpClient, getAuthorizedAmountAtomic } = createX402Fetch(budgetGuard, serviceName);
   const response = await paidFetch(url, init);
 
   if (response.status === 402) {
@@ -205,7 +230,7 @@ export async function probeQuote(
   init: RequestInit,
   endpointLabel = url,
 ): Promise<ProbeQuote> {
-  const res = await fetch(url, init);
+  const res = await fetchWithRetry(url, init, { label: endpointLabel, attempts: 3 });
   if (res.status !== 402) {
     throw new Error(`Expected HTTP 402 from ${endpointLabel}, got ${res.status}`);
   }

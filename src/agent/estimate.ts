@@ -2,6 +2,13 @@ import { createPlan, type AgentPlan } from "./plan.js";
 import { validateGoal, GoalRejectedError } from "./goal-validation.js";
 import type { CatalogTool } from "./tool-catalog.js";
 import type { PlannerWarning } from "./tool-planner.js";
+import { planHasBlockingProbeFailures } from "./tool-probe.js";
+
+export interface ProbeFailure {
+  service: string;
+  detail: string;
+  httpStatus: number | null;
+}
 
 export interface RunEstimate {
   goal: string;
@@ -17,6 +24,9 @@ export interface RunEstimate {
   suggestedBudget: number;
   maxRunBudget: number;
   probedAt: string;
+  /** False when any paid tool failed $0 preflight — blocks Start. */
+  probeGateOk: boolean;
+  probeFailures: ProbeFailure[];
 }
 
 export interface CreateEstimateOptions {
@@ -40,6 +50,14 @@ export async function createRunEstimate(
     minimumBudget,
   );
 
+  const probeFailures: ProbeFailure[] = plan.steps
+    .filter((s) => s.kind === "mcp" && s.probeHealth === "unavailable")
+    .map((s) => ({
+      service: s.service,
+      detail: s.probeDetail ?? "Vendor unavailable",
+      httpStatus: s.probeHttpStatus ?? null,
+    }));
+
   return {
     goal: trimmed,
     plan,
@@ -53,5 +71,7 @@ export async function createRunEstimate(
     suggestedBudget,
     maxRunBudget: 5,
     probedAt: new Date().toISOString(),
+    probeGateOk: !planHasBlockingProbeFailures(plan.steps),
+    probeFailures,
   };
 }

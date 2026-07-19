@@ -3,6 +3,7 @@ import {
   clampRunBudget,
   comfortableRunBudget,
   evaluateRunBudget,
+  evaluateProbeGate,
   minimumRunBudget,
   recommendedRunBudget,
 } from "../public/js/budget.js";
@@ -24,5 +25,11 @@ assert(ok.canRun && ok.state === "ok", "allows healthy limit");
 
 const wallet = evaluateRunBudget({ runLimit: 2, estimatedCost: 0.05, walletCredit: 0.5 });
 assert(wallet.canRun && wallet.state === "warn", "warns on wallet");
+
+const blocked = evaluateProbeGate({
+  probeGateOk: false,
+  probeFailures: [{ service: "Alephant", detail: "502 Bad Gateway", httpStatus: 502 }],
+});
+assert(!blocked.canRun && blocked.state === "error", "blocks on probe failure");
 
 console.log("=== budget.js tests passed ===");

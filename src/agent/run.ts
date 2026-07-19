@@ -7,6 +7,7 @@ import type { ReportDocument } from "./report-document.js";
 import { createBazaarMcpSession, type BazaarMcpSession } from "./bazaar-mcp.js";
 import { executePaidToolStep } from "./tool-execution.js";
 import { findCatalogTool } from "./tool-catalog.js";
+import { planHasBlockingProbeFailures } from "./tool-probe.js";
 import { resolveRunSession } from "../wallet/session.js";
 import { runWithContext } from "../wallet/run-context.js";
 import { setSignRequestEmitter } from "../wallet/sign-bridge.js";
@@ -42,6 +43,7 @@ export type RunEvent =
   | { type: "plan_approval_required"; runId: string; plan: AgentPlan; budgetUsdc: number }
   | { type: "ua_topup"; transactionId: string; amountUsdc: number }
   | { type: "step_start"; step: PlanStep; index: number }
+  | { type: "step_retry"; step: PlanStep; index: number; attempt: number; reason: string }
   | { type: "payment"; line: SpendLine; remaining: number }
   | { type: "step_done"; step: PlanStep; index: number }
   | { type: "sign_request"; request: SignRequest }
@@ -72,9 +74,10 @@ async function executeStep(
   mcpSession: BazaarMcpSession | undefined,
   guard: import("../budget/guard.js").BudgetGuard,
   catalog: import("./tool-catalog.js").CatalogTool[],
+  onRetry?: (info: { attempt: number; reason: string; label: string }) => void,
 ): Promise<PaymentResult> {
   const tool = step.mcpToolName ? findCatalogTool(catalog, step.mcpToolName) : undefined;
-  return executePaidToolStep(step, tool, mcpSession, guard);
+  return executePaidToolStep(step, tool, mcpSession, guard, { onRetry });
 }
 
 async function runAgentInner(options: RunOptions): Promise<RunResult> {
@@ -87,6 +90,12 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
   validateGoal(goal);
   const plan = approvedPlan ?? (await createPlan(goal, { userToolPicks }));
   onEvent?.({ type: "plan", plan });
+
+  if (planHasBlockingProbeFailures(plan.steps)) {
+    throw new Error(
+      "One or more tools failed preflight (vendor down or bad endpoint). Re-check price before running.",
+    );
+  }
 
   if (plan.totalEstUsdc > budgetUsdc) {
     throw new Error(
@@ -162,7 +171,15 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
         continue;
       }
 
-      const result = await executeStep(step, mcpSession, guard, plan.catalog);
+      const result = await executeStep(step, mcpSession, guard, plan.catalog, (info) => {
+        onEvent?.({
+          type: "step_retry",
+          step,
+          index: i,
+          attempt: info.attempt,
+          reason: info.reason,
+        });
+      });
 
       context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
 
