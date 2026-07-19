@@ -13,18 +13,33 @@ export async function fetchBalance(didToken) {
   return res.json();
 }
 
-export function renderBalanceHtml(balances) {
-  const uaLine = balances.uaUnifiedUsdc != null
-    ? `<li><span>Particle UA (unified)</span><strong>${formatUsdc(balances.uaUnifiedUsdc)}</strong></li>`
-    : `<li><span>Particle UA</span><strong class="empty-hint">${escapeHtml(balances.uaError ?? "Unavailable")}</strong></li>`;
+/** Single consumer-facing balance — prefers unified account credit. */
+export function pickAvailableCredit(balances) {
+  if (balances.uaUnifiedUsdc != null && balances.uaUnifiedUsdc > 0) {
+    return balances.uaUnifiedUsdc;
+  }
+  return balances.baseUsdc ?? 0;
+}
 
+export function renderBalanceHtml(balances) {
+  const available = pickAvailableCredit(balances);
+  const low = available < 0.05;
   return `
-    <ul class="balance-list">
-      <li><span>Base EOA</span><strong>${formatUsdc(balances.baseUsdc)}</strong></li>
-      <li><span>Arbitrum EOA</span><strong>${formatUsdc(balances.arbitrumUsdc)}</strong></li>
-      ${uaLine}
-    </ul>
-    <p class="balance-addr">${shortAddr(balances.eoaAddress)}</p>
+    <p class="balance-primary ${low ? "balance-primary--low" : ""}">${formatUsdc(available)}</p>
+    <p class="balance-hint">${low ? "Add funds before your next run" : "Available for new runs"}</p>
+    <details class="balance-advanced">
+      <summary>Account details</summary>
+      <ul class="balance-list">
+        <li><span>Spend wallet</span><strong>${formatUsdc(balances.baseUsdc)}</strong></li>
+        <li><span>Report wallet</span><strong>${formatUsdc(balances.arbitrumUsdc)}</strong></li>
+        ${
+          balances.uaUnifiedUsdc != null
+            ? `<li><span>Unified credit</span><strong>${formatUsdc(balances.uaUnifiedUsdc)}</strong></li>`
+            : `<li><span>Unified credit</span><strong class="empty-hint">${escapeHtml(balances.uaError ?? "Unavailable")}</strong></li>`
+        }
+      </ul>
+      <p class="balance-addr">${shortAddr(balances.eoaAddress)}</p>
+    </details>
   `;
 }
 
@@ -54,6 +69,6 @@ export function wireFundModal(copyBtn, walletAddress) {
     if (!walletAddress) return;
     await navigator.clipboard.writeText(walletAddress);
     copyBtn.textContent = "Copied!";
-    setTimeout(() => { copyBtn.textContent = "Copy address"; }, 2000);
+    setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
   });
 }

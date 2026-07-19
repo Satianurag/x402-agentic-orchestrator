@@ -28,8 +28,8 @@ export function renderHistoryItem(run, { compact = false } = {}) {
       </div>
       <p class="history-goal">${goal}${run.goal.length > (compact ? 60 : 120) ? "…" : ""}</p>
       <div class="history-item-meta">
-        <span>${formatUsdc(run.totalUsdc)} spent</span>
-        ${run.budgetUsdc ? `<span>cap ${formatUsdc(run.budgetUsdc)}</span>` : ""}
+        <span>${formatUsdc(run.totalUsdc)}</span>
+        ${run.budgetUsdc ? `<span>limit ${formatUsdc(run.budgetUsdc)}</span>` : ""}
       </div>
       <div class="history-item-actions">
         <button type="button" class="btn btn-secondary btn-sm history-open-btn" data-run-id="${run.id}">Open</button>

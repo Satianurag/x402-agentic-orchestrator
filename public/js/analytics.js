@@ -51,7 +51,7 @@ export function renderLedgerTable(container, lines) {
 
   container.innerHTML = `
     <table class="spend-table ledger-table">
-      <thead><tr><th>Date</th><th>Service</th><th>USDC</th><th>Tx</th></tr></thead>
+      <thead><tr><th>Date</th><th>Step</th><th>Cost</th><th>Receipt</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
