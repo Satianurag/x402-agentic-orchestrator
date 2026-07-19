@@ -57,6 +57,18 @@ function paymentHeader(res: Response, name: string): string | null {
   return res.headers.get(name) ?? res.headers.get(name.toUpperCase());
 }
 
+/** Parse JSON body; empty 200/204 responses are valid for x402 sellers that only return PAYMENT-RESPONSE headers. */
+export async function readJsonBodySafe(response: Response): Promise<unknown | null> {
+  const text = await response.text();
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    throw new Error(`Invalid JSON response (${response.status}): ${trimmed.slice(0, 200)}`);
+  }
+}
+
 /** Prefer Base (or configured payment chain) when sellers offer Solana + EVM accepts. */
 function preferPaymentNetworkSelector(paymentCaip2: string): SelectPaymentRequirements {
   return (_x402Version: number, accepts: PaymentRequirements[]) => {
@@ -199,7 +211,7 @@ export async function paidRequest(
   );
   budgetGuard.recordSpend(usdc);
 
-  const data = await response.json();
+  const data = (await readJsonBodySafe(response)) ?? {};
   console.log(`[x402] ${serviceName} paid ${usdc.toFixed(6)} USDC tx=${txHash}`);
 
   return {
@@ -234,7 +246,9 @@ export async function probeQuote(
     required = decodePaymentRequiredHeader(header);
   } else {
     const contentType = res.headers.get("content-type") ?? "";
-    const body = contentType.includes("application/json") ? await res.json() : undefined;
+    const body = contentType.includes("application/json")
+      ? ((await readJsonBodySafe(res)) ?? undefined)
+      : undefined;
     const httpClient = new x402HTTPClient(new x402Client());
     required = httpClient.getPaymentRequiredResponse(getHeader, body);
   }
