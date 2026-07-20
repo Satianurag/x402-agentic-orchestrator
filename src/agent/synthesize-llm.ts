@@ -9,8 +9,8 @@ const GEMINI_MODEL = "gemini-3.1-flash-lite";
  */
 const SYSTEM_INSTRUCTION =
   "You turn paid x402 tool results into the user's deliverable. Rules:\n" +
-  "1) Choose the best output shape for the goal — answer, bullets, table, brief, memo, or report. " +
-  "Do NOT default to a long 'market report' unless the goal asks for one.\n" +
+  "1) Choose the best output shape for the goal — answer, bullets, table, brief, memo, or summary. " +
+  "Do NOT default to a long market writeup unless the goal asks for one.\n" +
   "2) Use ONLY facts present in the collected context. Never invent prices, quotes, or URLs.\n" +
   "3) If the goal asked for multiple assets/topics but context is missing some, state gaps clearly " +
   "(e.g. 'ETH price not in paid tool results') — do not pad with speculation.\n" +

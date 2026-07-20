@@ -112,7 +112,7 @@ async function main() {
 
   console.log("\n--- DELIVERABLE ---\n");
   console.log(result.deliverable);
-  console.log("\n--- SPEND REPORT ---");
+  console.log("\n--- SPEND SUMMARY ---");
   for (const line of result.spend) {
     console.log(`  ${line.service.padEnd(28)} $${line.usdc.toFixed(6)}  ${line.txHash}`);
     if (line.explorerUrl) console.log(`               ${line.explorerUrl}`);
