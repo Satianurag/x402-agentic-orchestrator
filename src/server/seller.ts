@@ -145,6 +145,11 @@ app.get("/api/health", async (_req, res) => {
   res.json({ services: await getServicesHealth(), network: getNetworkMode() });
 });
 
+/** Render health check — lightweight 200 (docs: healthCheckPath). */
+app.get("/health", (_req, res) => {
+  res.status(200).type("text/plain").send("ok");
+});
+
 app.post("/api/estimate", async (req, res) => {
   try {
     const { goal, userToolPicks } = req.body as { goal?: string; userToolPicks?: string[] };
@@ -510,8 +515,9 @@ app.get("/app", (_req, res) => {
 
 app.use(express.static(publicDir));
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`x402 Agentic Orchestrator listening on http://localhost:${PORT}`);
+app.listen(PORT, process.env.HOST ?? "0.0.0.0", () => {
+  const host = process.env.HOST ?? "0.0.0.0";
+  console.log(`x402 Agentic Orchestrator listening on http://${host}:${PORT}`);
   console.log(`  (Magic login: use localhost — not 127.0.0.1 — unless allowlisted in Magic Dashboard)`);
   console.log(`  Seller network: ${getNetworkMode()} (${network})`);
   console.log(`  Payments: ${getNetworkMode() === "mainnet" ? "Base mainnet" : "Base Sepolia (via service URLs)"}`);

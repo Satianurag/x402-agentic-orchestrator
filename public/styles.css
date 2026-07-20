@@ -1380,8 +1380,6 @@ select {
 
 .agent-card--custom { border-style: dashed; }
 
-.estimate-note { margin-top: calc(-1 * var(--space-md)); margin-bottom: var(--space-md); }
-
 .estimate-card {
   margin-top: var(--space-lg);
   border: var(--border-w) solid var(--ink);
