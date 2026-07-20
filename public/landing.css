@@ -1141,6 +1141,60 @@ button { font-family: inherit; }
   background: var(--bg);
 }
 
+.login-step[hidden] {
+  display: none;
+}
+
+.login-back-btn {
+  margin: 0 0 var(--space-sm);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.login-back-btn:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.login-back-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-resend-btn {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-sm);
+  padding: 10px 0 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.login-resend-btn:hover:not(:disabled) {
+  color: var(--muted);
+}
+
+.login-resend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 404 page */
 body.page-404 {
   min-height: 100vh;

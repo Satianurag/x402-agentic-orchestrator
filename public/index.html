@@ -331,15 +331,31 @@
 <dialog id="login-modal" class="login-modal">
   <div class="login-modal-inner">
     <button type="button" class="login-modal-close" id="login-modal-close" aria-label="Close">×</button>
-    <h2>Welcome</h2>
-    <p class="login-hint">Email or Google — no seed phrase, no browser extension.</p>
-    <button id="google-login-btn" type="button" class="btn btn-google">Continue with Google</button>
-    <div class="login-divider" aria-hidden="true"><span>or</span></div>
-    <div class="login-field">
-      <label for="email">Email</label>
-      <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+
+    <div id="login-step-email" class="login-step">
+      <h2>Welcome</h2>
+      <p class="login-hint">Email or Google — no seed phrase, no browser extension.</p>
+      <button id="google-login-btn" type="button" class="btn btn-google">Continue with Google</button>
+      <div class="login-divider" aria-hidden="true"><span>or</span></div>
+      <div class="login-field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
+      </div>
+      <button id="login-btn" type="button" class="btn btn-primary login-submit">Continue with email</button>
     </div>
-    <button id="login-btn" type="button" class="btn btn-primary login-submit">Continue with email</button>
+
+    <div id="login-step-otp" class="login-step" hidden>
+      <button type="button" id="otp-back-btn" class="login-back-btn">← Back</button>
+      <h2>Check your email</h2>
+      <p class="login-hint">Enter the code we sent to <strong id="otp-email-display"></strong>.</p>
+      <div class="login-field">
+        <label for="otp">One-time code</label>
+        <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="6" />
+      </div>
+      <button id="otp-verify-btn" type="button" class="btn btn-primary login-submit">Verify code</button>
+      <button id="otp-resend-btn" type="button" class="login-resend-btn">Resend code</button>
+    </div>
+
     <p id="login-status" class="login-status" aria-live="polite"></p>
   </div>
 </dialog>
