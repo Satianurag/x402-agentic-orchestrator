@@ -1,9 +1,9 @@
 export const RETURN_PATH_KEY = "x402-app-return-path";
-/** Default screen after login — New task (not dashboard stats). */
+/** Default screen after login — merged Home (overview + new task). */
 export const DEFAULT_ENTRY_VIEW = "home";
 
 const PROTECTED_VIEWS = new Set([
-  "dashboard", "home", "running", "result", "history", "analytics", "settings",
+  "home", "running", "result", "history", "analytics", "settings",
 ]);
 
 const ROUTABLE_VIEWS = new Set([...PROTECTED_VIEWS]);
@@ -21,7 +21,8 @@ export function isRoutableView(view) {
 /** @param {string} [search] */
 export function parseRoute(search = window.location.search) {
   const params = new URLSearchParams(search);
-  const view = params.get("view");
+  let view = params.get("view");
+  if (view === "dashboard") view = "home";
   const runId = params.get("run");
   return {
     view: view && isRoutableView(view) ? view : null,
