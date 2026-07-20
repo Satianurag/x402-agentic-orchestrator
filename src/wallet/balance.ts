@@ -39,6 +39,8 @@ async function readUsdcBalance(
 
 export interface WalletBalances {
   eoaAddress: string;
+  /** EVM Universal Account address from getSmartAccountOptions().smartAccountAddress */
+  uaSmartAccountAddress: string | null;
   baseUsdc: number;
   arbitrumUsdc: number;
   uaUnifiedUsdc: number | null;
@@ -55,13 +57,26 @@ export async function getWalletBalances(
   ]);
 
   let uaUnifiedUsdc: number | null = null;
+  let uaSmartAccountAddress: string | null = null;
   let uaError: string | undefined;
   try {
     const ua = new UniversalAccountWallet(signer);
-    uaUnifiedUsdc = await ua.getUnifiedUsdcBalance();
+    const [unified, uaAddr] = await Promise.all([
+      ua.getUnifiedUsdcBalance(),
+      ua.getAddress(),
+    ]);
+    uaUnifiedUsdc = unified;
+    uaSmartAccountAddress = uaAddr;
   } catch (err) {
     uaError = err instanceof Error ? err.message : String(err);
   }
 
-  return { eoaAddress, baseUsdc, arbitrumUsdc, uaUnifiedUsdc, uaError };
+  return {
+    eoaAddress,
+    uaSmartAccountAddress,
+    baseUsdc,
+    arbitrumUsdc,
+    uaUnifiedUsdc,
+    uaError,
+  };
 }

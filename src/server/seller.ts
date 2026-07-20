@@ -141,8 +141,8 @@ app.get("/agents", (_req, res) => {
   res.json(PREBUILT_AGENTS);
 });
 
-app.get("/api/health", (_req, res) => {
-  res.json({ services: getServicesHealth(), network: getNetworkMode() });
+app.get("/api/health", async (_req, res) => {
+  res.json({ services: await getServicesHealth(), network: getNetworkMode() });
 });
 
 app.post("/api/estimate", async (req, res) => {
