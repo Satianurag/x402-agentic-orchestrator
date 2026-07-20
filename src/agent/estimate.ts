@@ -1,3 +1,4 @@
+import { resolveSuggestedBudget } from "./budget-cap.js";
 import { createPlan, type AgentPlan } from "./plan.js";
 import { validateGoal, GoalRejectedError } from "./goal-validation.js";
 import type { CatalogTool } from "./tool-catalog.js";
@@ -13,11 +14,15 @@ export interface RunEstimate {
   warnings: PlannerWarning[];
   totalEstUsdc: number;
   suggestedBudget: number;
+  minimumBudget: number;
+  minimumRequired: number;
+  preferredFits: boolean;
   probedAt: string;
 }
 
 export interface CreateEstimateOptions {
   userToolPicks?: string[];
+  budgetCap?: number;
 }
 
 export { GoalRejectedError };
@@ -30,11 +35,7 @@ export async function createRunEstimate(
   validateGoal(trimmed);
 
   const plan = await createPlan(trimmed, { userToolPicks: options.userToolPicks });
-  // Cap = estimate + 25%, rounded up to 1¢, hard-capped at $0.10 for probe runs.
-  const suggestedBudget = Math.min(
-    0.1,
-    Math.max(Math.ceil(plan.totalEstUsdc * 1.25 * 100) / 100, 0.01),
-  );
+  const budget = resolveSuggestedBudget(plan.totalEstUsdc, options.budgetCap);
 
   return {
     goal: trimmed,
@@ -45,7 +46,10 @@ export async function createRunEstimate(
     thoughts: plan.thoughts,
     warnings: plan.warnings,
     totalEstUsdc: plan.totalEstUsdc,
-    suggestedBudget,
+    suggestedBudget: budget.suggestedBudget,
+    minimumBudget: budget.minimumBudget,
+    minimumRequired: budget.minimumRequired,
+    preferredFits: budget.preferredFits,
     probedAt: new Date().toISOString(),
   };
 }

@@ -32,6 +32,7 @@ import {
   exportLedgerCsv,
 } from "./js/analytics.js";
 import { showToast } from "./js/toast.js";
+import { clampRunBudget } from "./js/budget-cap.js";
 import {
   parseRoute,
   consumeReturnPath,
@@ -41,6 +42,7 @@ import {
   DEFAULT_ENTRY_VIEW,
   resolveEntryRoute,
   RETURN_PATH_KEY,
+  saveReturnPath,
 } from "./js/router.js";
 
 const APP_BRAND = "x402 // Orchestrator";
@@ -73,7 +75,7 @@ const customAgentList = document.getElementById("custom-agent-list");
 const customAgentsFieldset = document.getElementById("custom-agents-fieldset");
 const saveAgentBtn = document.getElementById("save-agent-btn");
 const goalInput = document.getElementById("goal");
-const budgetInput = document.getElementById("budget");
+const runLimitInput = document.getElementById("run-limit-input");
 const estimateBtn = document.getElementById("estimate-btn");
 const estimateCard = document.getElementById("estimate-card");
 const estimateProbedAt = document.getElementById("estimate-probed-at");
@@ -82,8 +84,8 @@ const estimateWarnings = document.getElementById("estimate-warnings");
 const estimateSteps = document.getElementById("estimate-steps");
 const estimateCatalog = document.getElementById("estimate-catalog");
 const estimateCatalogList = document.getElementById("estimate-catalog-list");
-const userToolPicksInput = document.getElementById("user-tool-picks");
 const estimateTotal = document.getElementById("estimate-total");
+const runLimitNote = document.getElementById("run-limit-note");
 const estimateBudgetWarn = document.getElementById("estimate-budget-warn");
 const runBtn = document.getElementById("run-btn");
 const stopBtn = document.getElementById("stop-btn");
@@ -150,6 +152,9 @@ const settingsLogoutBtn = document.getElementById("settings-logout-btn");
 const settingsAccountEmail = document.getElementById("settings-account-email");
 const logoutModal = document.getElementById("logout-modal");
 const logoutConfirmBtn = document.getElementById("logout-confirm-btn");
+const saveAgentModal = document.getElementById("save-agent-modal");
+const saveAgentNameInput = document.getElementById("save-agent-name");
+const saveAgentConfirmBtn = document.getElementById("save-agent-confirm-btn");
 
 let magic = null;
 let didToken = null;
@@ -164,15 +169,18 @@ let appConfig = null;
 let lastEstimate = null;
 let lastEstimateGoal = "";
 let selectedCatalogPicks = new Set();
+let pendingPreferredCap = null;
 let lastResultRunId = null;
 
 const stepState = new Map();
 
-function redirectUnauthorized() {
-  window.location.replace("/404.html");
-}
-
 function redirectToLogin() {
+  const search = window.location.search;
+  if (search) {
+    saveReturnPath(search);
+  } else if (currentView && isProtectedView(currentView)) {
+    saveReturnPath({ view: currentView, runId: lastResultRunId });
+  }
   window.location.href = "/?open=login";
 }
 
@@ -191,7 +199,7 @@ async function requireAuth() {
       updateAuthUi();
     }
   }
-  redirectUnauthorized();
+  redirectToLogin();
   return false;
 }
 
@@ -225,7 +233,7 @@ function isAuthed() {
 
 function showView(name, { updateUrl = true, historyMode = "push", runId = null } = {}) {
   if (!isAuthed()) {
-    redirectUnauthorized();
+    redirectToLogin();
     return;
   }
   if (name === "dashboard") name = "home";
@@ -258,7 +266,7 @@ function showView(name, { updateUrl = true, historyMode = "push", runId = null }
 
 async function applyRoute(route, { fromPopstate = false } = {}) {
   if (!isAuthed()) {
-    redirectUnauthorized();
+    redirectToLogin();
     return;
   }
 
@@ -319,9 +327,29 @@ async function applyRoute(route, { fromPopstate = false } = {}) {
 }
 
 function applyBudgetFromSearch(search) {
-  if (!search || !budgetInput) return;
+  if (!search) return;
   const parsed = parseFloat(new URLSearchParams(search).get("budget"));
-  if (Number.isFinite(parsed) && parsed > 0) budgetInput.value = String(parsed);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    pendingPreferredCap = clampRunBudget(parsed);
+    saveSettings({ defaultBudget: pendingPreferredCap });
+  }
+}
+
+function getPreferredRunLimit() {
+  if (runLimitInput?.value) {
+    const current = parseFloat(runLimitInput.value);
+    if (Number.isFinite(current) && current > 0) return clampRunBudget(current);
+  }
+  if (pendingPreferredCap != null) {
+    const cap = pendingPreferredCap;
+    pendingPreferredCap = null;
+    return clampRunBudget(cap);
+  }
+  const settings = loadSettings();
+  if (settings.defaultBudget) return clampRunBudget(settings.defaultBudget);
+  const urlBudget = parseFloat(new URLSearchParams(window.location.search).get("budget"));
+  if (Number.isFinite(urlBudget) && urlBudget > 0) return clampRunBudget(urlBudget);
+  return undefined;
 }
 
 function openFundFlow() {
@@ -532,10 +560,6 @@ async function refreshBalances(targetEl) {
 
 async function refreshHome() {
   if (!didToken) return;
-  const settings = loadSettings();
-  if (settings.defaultBudget && budgetInput) {
-    budgetInput.value = String(settings.defaultBudget);
-  }
   homeEmpty.hidden = Boolean(goalInput?.value.trim());
   try {
     await ensureFreshDidToken();
@@ -638,8 +662,8 @@ async function refreshAnalytics() {
 
 async function refreshSettings() {
   const settings = loadSettings();
-  const budget = Number(settings.defaultBudget ?? 0.1);
-  settingsDefaultBudget.value = Number.isFinite(budget) ? Math.min(budget, 0.1).toFixed(2) : "0.10";
+  const budget = Number(settings.defaultBudget ?? 0.15);
+  settingsDefaultBudget.value = Number.isFinite(budget) ? clampRunBudget(budget).toFixed(2) : "0.15";
   settingsTheme.value = settings.theme ?? "light";
   settingsNotifications.checked = Boolean(settings.notifications);
 
@@ -698,7 +722,8 @@ function wireHistoryButtons(container) {
   container?.querySelectorAll(".history-rerun-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       goalInput.value = btn.dataset.goal;
-      budgetInput.value = btn.dataset.budget;
+      pendingPreferredCap = clampRunBudget(parseFloat(btn.dataset.budget));
+      hideEstimate();
       showView("home");
     });
   });
@@ -713,6 +738,7 @@ async function loadAgents() {
     btn.type = "button";
     btn.className = "agent-card";
     btn.setAttribute("role", "listitem");
+    btn.setAttribute("aria-pressed", "false");
     btn.innerHTML = `<strong>${agent.name}</strong><span>${agent.description} · from ~$${agent.suggestedBudget}</span>`;
     btn.addEventListener("click", () => selectAgent(btn, agent.goal, agent.suggestedBudget));
     agentList.appendChild(btn);
@@ -729,6 +755,7 @@ async function loadCustomAgents() {
     btn.type = "button";
     btn.className = "agent-card agent-card--custom";
     btn.setAttribute("role", "listitem");
+    btn.setAttribute("aria-pressed", "false");
     btn.innerHTML = `<strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.description || "Custom task")} · from ~$${agent.suggestedBudget}</span>`;
     btn.addEventListener("click", () => selectAgent(btn, agent.goal, agent.suggestedBudget));
     customAgentList.appendChild(btn);
@@ -738,8 +765,12 @@ async function loadCustomAgents() {
 function selectAgent(btn, goal, budget) {
   document.querySelectorAll(".agent-card").forEach((c) => c.classList.remove("selected"));
   btn.classList.add("selected");
+  btn.setAttribute("aria-pressed", "true");
+  document.querySelectorAll(".agent-card").forEach((c) => {
+    if (c !== btn) c.setAttribute("aria-pressed", "false");
+  });
   goalInput.value = goal;
-  budgetInput.value = budget;
+  pendingPreferredCap = clampRunBudget(budget);
   homeEmpty.hidden = true;
   hideEstimate();
 }
@@ -893,14 +924,7 @@ function hideEstimate() {
 }
 
 function parseUserToolPicks() {
-  const picks = new Set(selectedCatalogPicks);
-  const raw = userToolPicksInput?.value?.trim();
-  if (raw) {
-    for (const s of raw.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean)) {
-      picks.add(s);
-    }
-  }
-  return [...picks];
+  return [...selectedCatalogPicks];
 }
 
 function renderCatalogPicker(catalog) {
@@ -940,16 +964,37 @@ function renderCatalogPicker(catalog) {
   });
 }
 
-function syncRunBudgetFromEstimate(estimate) {
-  budgetInput.value = String(estimate.suggestedBudget);
-  if (!estimateBudgetWarn) return;
-  if (estimate.suggestedBudget < estimate.totalEstUsdc) {
+function syncRunLimitFromEstimate(estimate) {
+  if (!runLimitInput) return;
+  runLimitInput.value = estimate.suggestedBudget.toFixed(2);
+  if (!estimateBudgetWarn || !runLimitNote) return;
+
+  const limit = parseFloat(runLimitInput.value);
+  const belowEstimate = limit < estimate.totalEstUsdc;
+  const belowRecommended = limit < estimate.minimumBudget;
+
+  if (belowEstimate) {
     estimateBudgetWarn.hidden = false;
-    estimateBudgetWarn.textContent = "Estimated cost exceeds the run limit. Check price again or raise your default limit in Settings.";
+    estimateBudgetWarn.textContent =
+      `Run limit must be at least ${formatUsdc(estimate.totalEstUsdc)} to cover the estimate.`;
+    runLimitNote.textContent = `Minimum required: ${formatUsdc(estimate.minimumRequired)} USDC.`;
     runBtn.disabled = true;
+  } else if (belowRecommended) {
+    estimateBudgetWarn.hidden = false;
+    estimateBudgetWarn.textContent =
+      `A limit of ${formatUsdc(estimate.minimumBudget)} or more is recommended for buffer.`;
+    runLimitNote.textContent = `Recommended minimum: ${formatUsdc(estimate.minimumBudget)} USDC.`;
+    runBtn.disabled = false;
+  } else if (!estimate.preferredFits) {
+    estimateBudgetWarn.hidden = false;
+    estimateBudgetWarn.textContent =
+      `Your default limit was below the estimate — we raised it to ${formatUsdc(estimate.suggestedBudget)}.`;
+    runLimitNote.textContent = `Maximum spend for this run. Must cover the estimated cost.`;
+    runBtn.disabled = false;
   } else {
     estimateBudgetWarn.hidden = true;
     estimateBudgetWarn.textContent = "";
+    runLimitNote.textContent = `Maximum spend for this run. Must cover the estimated cost.`;
     runBtn.disabled = false;
   }
 }
@@ -957,7 +1002,7 @@ function syncRunBudgetFromEstimate(estimate) {
 function renderEstimate(estimate) {
   lastEstimate = estimate;
   lastEstimateGoal = estimate.goal;
-  syncRunBudgetFromEstimate(estimate);
+  syncRunLimitFromEstimate(estimate);
 
   const stepCount = estimate.plan.steps.length;
   estimateProbedAt.textContent = `Price checked ${new Date(estimate.probedAt).toLocaleString()} · ${stepCount} step${stepCount === 1 ? "" : "s"}`;
@@ -1014,7 +1059,7 @@ function renderEstimate(estimate) {
 
   estimateTotal.innerHTML =
     `Paid tools: <strong>${formatUsdc(estimate.totalEstUsdc)}</strong> · ` +
-    `compose included free · run limit <strong>${formatUsdc(estimate.suggestedBudget)}</strong>`;
+    `compose included free · recommended limit <strong>${formatUsdc(estimate.minimumBudget)}</strong>`;
   estimateCard.hidden = false;
   runBtn.hidden = false;
 }
@@ -1032,12 +1077,13 @@ async function fetchEstimate() {
   hideEstimate();
 
   const userToolPicks = parseUserToolPicks();
+  const budgetCap = getPreferredRunLimit();
 
   try {
     const res = await fetch("/api/estimate", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ goal, userToolPicks }),
+      body: JSON.stringify({ goal, userToolPicks, budgetCap }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -1067,15 +1113,14 @@ async function startRun() {
     return;
   }
 
-  const budget = Math.min(Number(lastEstimate.suggestedBudget) || 0.1, 0.1);
-  if (budget < lastEstimate.plan.totalEstUsdc) {
+  const budget = clampRunBudget(parseFloat(runLimitInput?.value ?? String(lastEstimate.suggestedBudget)));
+  if (budget < lastEstimate.totalEstUsdc) {
     showToast(
-      `Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`,
+      `Run limit must be at least ${formatUsdc(lastEstimate.totalEstUsdc)} to cover the estimate.`,
       { type: "warning" },
     );
     return;
   }
-  budgetInput.value = String(budget);
 
   showView("running");
   resetRunUi(budget);
@@ -1206,7 +1251,7 @@ async function restoreSession() {
 
   const loggedIn = await magic.user.isLoggedIn();
   if (!loggedIn) {
-    redirectUnauthorized();
+    redirectToLogin();
     return;
   }
 
@@ -1272,7 +1317,7 @@ againBtn.addEventListener("click", () => showView("home"));
 document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     if (!isAuthed()) {
-      redirectUnauthorized();
+      redirectToLogin();
       return;
     }
     showView(btn.dataset.view);
@@ -1282,7 +1327,7 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 document.querySelectorAll("[data-goto]").forEach((el) => {
   el.addEventListener("click", () => {
     if (!isAuthed()) {
-      redirectUnauthorized();
+      redirectToLogin();
       return;
     }
     showView(el.dataset.goto);
@@ -1295,7 +1340,7 @@ fundWalletBtn?.addEventListener("click", () => openFundFlow());
 document.querySelector(".app-brand")?.addEventListener("click", (ev) => {
   ev.preventDefault();
   if (!isAuthed()) {
-    redirectUnauthorized();
+    redirectToLogin();
     return;
   }
   showView("home");
@@ -1349,23 +1394,46 @@ saveAgentBtn?.addEventListener("click", async () => {
     showToast("Enter a goal first.", { type: "warning" });
     return;
   }
-  const name = prompt("Agent name:");
-  if (!name) return;
+  if (saveAgentNameInput) saveAgentNameInput.value = "";
+  if (saveAgentModal?.open) return;
+  saveAgentModal?.showModal();
+  saveAgentNameInput?.focus();
+});
+
+saveAgentConfirmBtn?.addEventListener("click", async () => {
+  if (!(await requireAuth())) return;
+  const goal = goalInput.value.trim();
+  const name = saveAgentNameInput?.value?.trim();
+  if (!goal) {
+    showToast("Enter a goal first.", { type: "warning" });
+    return;
+  }
+  if (!name) {
+    showToast("Enter a name for this task.", { type: "warning" });
+    return;
+  }
+  const limit = runLimitInput?.value
+    ? clampRunBudget(parseFloat(runLimitInput.value))
+    : getPreferredRunLimit() ?? 0.15;
   try {
     await saveCustomAgent(didToken, {
       name,
       description: "Custom saved agent",
       goal,
-      suggestedBudget: Math.min(parseFloat(budgetInput.value) || 0.1, 0.1),
+      suggestedBudget: limit,
     });
+    saveAgentModal?.close();
     await loadCustomAgents();
+    showToast("Task saved.", { type: "success" });
   } catch (err) {
     showToast(err.message, { type: "error" });
   }
 });
 
 settingsDefaultBudget?.addEventListener("change", () => {
-  saveSettings({ defaultBudget: Math.min(parseFloat(settingsDefaultBudget.value) || 0.1, 0.1) });
+  const value = clampRunBudget(parseFloat(settingsDefaultBudget.value) || 0.15);
+  settingsDefaultBudget.value = value.toFixed(2);
+  saveSettings({ defaultBudget: value });
 });
 
 settingsTheme?.addEventListener("change", () => {
@@ -1432,8 +1500,12 @@ shareSummaryBtn?.addEventListener("click", async () => {
   } else {
     await navigator.clipboard.writeText(summary);
     shareSummaryBtn.textContent = "Copied!";
-    setTimeout(() => { shareSummaryBtn.textContent = "Share summary"; }, 2000);
+    setTimeout(() => { shareSummaryBtn.textContent = "Share"; }, 2000);
   }
+});
+
+runLimitInput?.addEventListener("input", () => {
+  if (lastEstimate) syncRunLimitFromEstimate(lastEstimate);
 });
 
 goalInput?.addEventListener("input", () => {

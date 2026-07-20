@@ -244,7 +244,7 @@
         <div class="section-kicker">BUDGET ENFORCEMENT</div>
         <h2 class="section-title">FUNDED? CHECKED?<br/><span>THEN PAY.</span></h2>
       </div>
-      <p class="section-desc">Interactive example — drag to see how cap vs estimated costs behave.</p>
+      <p class="section-desc">Set your default run cap below — it applies when you launch the app. Drag to see how limits interact with example costs.</p>
     </div>
     <div class="budget-grid">
       <div class="budget-card reveal">
@@ -261,13 +261,13 @@
         </div>
       </div>
       <div class="budget-card reveal" style="transition-delay:.08s">
-        <div class="budget-card-head" style="background:var(--cyan)"><span>EXAMPLE CAP</span><span id="pctLabel">—</span></div>
+        <div class="budget-card-head" style="background:var(--cyan)"><span>DEFAULT RUN CAP</span><span id="pctLabel">—</span></div>
         <div class="budget-card-body budget-card-body--interactive">
           <div class="budget-visual">
             <div class="budget-knob" id="knob"><div class="budget-knob-inner"><b id="knobVal">$0.15</b><span>RUN CAP</span></div></div>
           </div>
           <div>
-            <label class="slider-label"><span>Budget cap</span><span id="capVal">0.15 USDC</span></label>
+            <label class="slider-label"><span>Default run limit</span><span id="capVal">0.15 USDC</span></label>
             <input type="range" min="5" max="50" value="15" id="capSlider" class="cap-slider"/>
           </div>
           <div class="est-box">
@@ -277,7 +277,7 @@
             <div class="est-total"><span>TOTAL (EXAMPLE)</span><span id="estTot">0.022</span></div>
             <div id="budgetMsg" class="budget-msg">✓ EXAMPLE FITS CAP</div>
           </div>
-          <p class="est-disclaimer">Illustrative estimates only — live runs probe real 402 prices.</p>
+          <p class="est-disclaimer">Example tool costs above are illustrative. Your default cap is saved when you launch the app.</p>
         </div>
       </div>
     </div>

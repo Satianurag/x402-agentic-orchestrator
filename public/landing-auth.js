@@ -1,6 +1,8 @@
 import { Magic } from "https://cdn.jsdelivr.net/npm/magic-sdk@33.9.0/+esm";
 import { OAuthExtension } from "https://cdn.jsdelivr.net/npm/@magic-ext/oauth2@9.21.0/+esm";
 
+import { RETURN_PATH_KEY } from "./js/router.js";
+
 export const LAUNCH_BUDGET_KEY = "x402-launch-budget";
 
 let magic = null;
@@ -119,6 +121,13 @@ export function closeLoginModal(success = false) {
 function enterApp() {
   const budget = sessionStorage.getItem(LAUNCH_BUDGET_KEY) || pickLaunchBudget();
   sessionStorage.removeItem(LAUNCH_BUDGET_KEY);
+  const saved = sessionStorage.getItem(RETURN_PATH_KEY);
+  if (saved) {
+    const params = new URLSearchParams(saved.replace(/^\?/, ""));
+    if (!params.has("budget")) params.set("budget", budget);
+    window.location.href = `/app?${params.toString()}`;
+    return;
+  }
   window.location.href = appEntryUrl(budget);
 }
 
@@ -302,7 +311,9 @@ export async function initLandingAuth() {
       return;
     }
     if (new URLSearchParams(window.location.search).get("open") === "login") {
-      sessionStorage.setItem(LAUNCH_BUDGET_KEY, pickLaunchBudget());
+      if (!sessionStorage.getItem(LAUNCH_BUDGET_KEY)) {
+        sessionStorage.setItem(LAUNCH_BUDGET_KEY, pickLaunchBudget());
+      }
       history.replaceState(null, "", "/");
       await openLoginModal();
     }

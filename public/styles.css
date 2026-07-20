@@ -1692,6 +1692,45 @@ body.app-product .logout-modal-actions .btn {
   flex: 1;
 }
 
+body.app-product .save-agent-modal {
+  border: var(--border-w) solid var(--ink);
+  padding: 0;
+  max-width: 24rem;
+  width: min(24rem, calc(100vw - 2rem));
+  box-shadow: var(--shadow) var(--shadow) 0 var(--ink);
+}
+
+body.app-product .save-agent-modal::backdrop {
+  background: rgba(15, 15, 15, 0.55);
+}
+
+body.app-product .save-agent-modal-inner {
+  padding: var(--space-xl) var(--space-lg) var(--space-lg);
+  background: var(--paper);
+}
+
+body.app-product .save-agent-modal-inner h2 {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  text-transform: uppercase;
+  line-height: 0.95;
+}
+
+body.app-product .save-agent-modal-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+body.app-product .save-agent-modal-actions .btn {
+  flex: 1;
+}
+
+body.app-product .run-limit-field {
+  margin-bottom: var(--space-md);
+}
+
 body.app-product .visually-hidden {
   position: absolute;
   width: 1px;

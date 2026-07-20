@@ -165,7 +165,11 @@ app.get("/health", (_req, res) => {
 
 app.post("/api/estimate", async (req, res) => {
   try {
-    const { goal, userToolPicks } = req.body as { goal?: string; userToolPicks?: string[] };
+    const { goal, userToolPicks, budgetCap } = req.body as {
+      goal?: string;
+      userToolPicks?: string[];
+      budgetCap?: number;
+    };
     if (!goal || typeof goal !== "string") {
       res.status(400).json({ error: "goal is required" });
       return;
@@ -173,7 +177,11 @@ app.post("/api/estimate", async (req, res) => {
     const picks = Array.isArray(userToolPicks)
       ? userToolPicks.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
       : undefined;
-    const estimate = await createRunEstimate(goal, { userToolPicks: picks });
+    const cap = Number(budgetCap);
+    const estimate = await createRunEstimate(goal, {
+      userToolPicks: picks,
+      budgetCap: Number.isFinite(cap) && cap > 0 ? cap : undefined,
+    });
     res.json(estimate);
   } catch (err) {
     if (err instanceof GoalRejectedError) {
