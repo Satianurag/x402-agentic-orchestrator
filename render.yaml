@@ -9,17 +9,17 @@ services:
     branch: main
     plan: free
     region: oregon
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
       - key: NODE_VERSION
-        value: "22"
+        value: "22.x"
       - key: HOST
         value: "0.0.0.0"
-      - key: NODE_ENV
-        value: production
+      # Do NOT set NODE_ENV=production before install if start uses tooling;
+      # production is fine at runtime. Keep NODE_ENV unset at build, set at run via Render if needed.
       - key: NETWORK
         value: mainnet
       # Secrets — set in Render Dashboard / API (never commit). Docs: sync: false

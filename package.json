@@ -4,7 +4,7 @@
   "description": "Pay-per-use AI agent that orchestrates x402 micro-services with on-chain budget",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "build": "tsc --noEmit",
@@ -34,12 +34,12 @@
     "dotenv": "17.4.2",
     "ethers": "6.17.0",
     "express": "4.22.2",
+    "tsx": "4.23.1",
     "viem": "2.55.2"
   },
   "devDependencies": {
     "@types/express": "4.17.25",
     "@types/node": "22.20.1",
-    "tsx": "4.23.1",
     "typescript": "5.9.3"
   },
   "overrides": {
