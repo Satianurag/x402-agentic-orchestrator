@@ -11,7 +11,8 @@ export function inlineMarkdown(text) {
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[^"'>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
 }
 
 export function renderMarkdown(text) {
@@ -88,7 +89,8 @@ export const SERVICE_META = {
   firecrawl: { label: "Web crawl", icon: "🌐", chain: "base", blurb: "Reading pages for details" },
   browserbase: { label: "Browser session", icon: "🖥", chain: "base", blurb: "Running a live browser session" },
   exa: { label: "Semantic search", icon: "✦", chain: "base", blurb: "Finding relevant documents" },
-  synthesize: { label: "Write report", icon: "📝", chain: "arbitrum", blurb: "Composing your final deliverable" },
+  synthesize: { label: "Compose (included)", icon: "📝", chain: "local", blurb: "Composing your deliverable — not billed" },
+  compose: { label: "Compose (included)", icon: "📝", chain: "local", blurb: "Composing your deliverable — not billed" },
 };
 
 export const SETTINGS_KEY = "x402-app-settings";

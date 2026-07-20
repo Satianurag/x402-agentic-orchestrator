@@ -38,8 +38,8 @@ export class BudgetGuard {
   }
 
   /**
-   * Fund run wallet: UA cross-chain top-up → EOA on Base (7702 path), then verify
-   * on-chain EOA balance covers the cap. Chain rejects payments when EOA is empty.
+   * Fund run wallet: UA → EOA on Base for paid Bazaar x402 tools.
+   * Local Gemini compose is free and does not need USDC.
    */
   async fundRunWallet(): Promise<UaTopUpResult | undefined> {
     const ua = getUniversalAccountWallet();
@@ -106,7 +106,7 @@ export class BudgetGuard {
     return Math.min(Math.max(0, this.capUsdc - this.spent), onChain);
   }
 
-  async preCheck(quoteUsdc: number): Promise<void> {
+  async preCheck(quoteUsdc: number, _network?: string): Promise<void> {
     this.assertFunded();
     const quoteAtomic = usdcToAtomic(quoteUsdc);
     const projected = this.spentAtomic + quoteAtomic;

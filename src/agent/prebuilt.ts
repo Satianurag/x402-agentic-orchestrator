@@ -19,21 +19,21 @@ export const PREBUILT_AGENTS: PrebuiltAgent[] = [
     name: "Web Monitor",
     description: "Crawl the web and summarize findings",
     goal: "Find and summarize recent news about x402 micropayments and agentic finance",
-    suggestedBudget: 0.15,
+    suggestedBudget: 0.1,
   },
   {
     id: "deep-browse",
     name: "Deep Browse",
     description: "Semantic search + browser session + synthesis",
     goal: "Investigate how AI agents use x402 for autonomous payments with primary sources",
-    suggestedBudget: 0.2,
+    suggestedBudget: 0.1,
   },
   {
     id: "crypto-brief",
     name: "Crypto Brief",
     description: "Price data + web context brief",
     goal: "Produce a crypto brief on SOL, ETH, and BTC prices and recent catalysts",
-    suggestedBudget: 0.12,
+    suggestedBudget: 0.1,
   },
 ];
 

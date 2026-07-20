@@ -1,6 +1,13 @@
 import { createPublicClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { getBaseRpcUrl, getPaymentChain, getPaymentUsdc } from "../config/chains.js";
+import {
+  getBaseRpcUrl,
+  getPaymentChain,
+  getPaymentUsdc,
+  getSellerChain,
+  getSellerRpcUrl,
+  getSellerUsdc,
+} from "../config/chains.js";
 import { getRunContext } from "./run-context.js";
 
 const ERC20_BALANCE_ABI = [
@@ -43,6 +50,20 @@ export async function getEoaBaseUsdcBalance(): Promise<bigint> {
   });
   return client.readContract({
     address: getPaymentUsdc(),
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: [getRunEoaAddress()],
+  });
+}
+
+/** USDC on seller settlement chain (Arbitrum) — required for /synthesize. */
+export async function getEoaSellerUsdcBalance(): Promise<bigint> {
+  const client = createPublicClient({
+    chain: getSellerChain(),
+    transport: http(getSellerRpcUrl()),
+  });
+  return client.readContract({
+    address: getSellerUsdc(),
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
     args: [getRunEoaAddress()],

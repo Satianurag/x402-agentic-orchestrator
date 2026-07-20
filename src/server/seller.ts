@@ -9,8 +9,8 @@ import {
   createSellerFacilitatorClient,
   getBaseRpcUrl,
   getNetworkMode,
+  getPaymentCaip2,
   getPaymentChain,
-  getSellerCaip2,
 } from "../config/chains.js";
 import { PREBUILT_AGENTS } from "../agent/prebuilt.js";
 import { synthesizeWithLlm } from "../agent/synthesize-llm.js";
@@ -19,7 +19,7 @@ import { resolvePlanApproval, hasPendingApproval } from "../agent/run-controller
 import { createRunEstimate, GoalRejectedError } from "../agent/estimate.js";
 import { answerFollowUp } from "../agent/follow-up-chat.js";
 import type { AgentPlan } from "../agent/plan.js";
-import { fulfillSignRequest } from "../wallet/sign-bridge.js";
+import { fulfillSignRequest, jsonSafeDeep } from "../wallet/sign-bridge.js";
 import { SELLER_PRICE_USDC } from "../services/seller.js";
 import { verifyMagicDidToken } from "../wallet/ua.js";
 import { resolveRunSession } from "../wallet/session.js";
@@ -53,7 +53,8 @@ if (!magicPublishableKey) {
   throw new Error("MAGIC_PUBLISHABLE_KEY is required for UI login");
 }
 
-const network = getSellerCaip2();
+// Buyer tools + /synthesize both settle in USDC on Base so UA Base deposits fund the full run.
+const network = getPaymentCaip2();
 const facilitatorClient = createSellerFacilitatorClient();
 const resourceServer = new x402ResourceServer(facilitatorClient).register(
   network,
@@ -68,6 +69,15 @@ async function requireMagicAddress(didToken: string | undefined): Promise<`0x${s
   return (await verifyMagicDidToken(didToken)) as `0x${string}`;
 }
 
+function sanitizeErrorMessage(message: string): string {
+  let m = message;
+  if (/<html[\s>]/i.test(m) || m.includes("Streamable HTTP error")) {
+    m = m.replace(/<html[\s\S]*/i, "[Coinbase/HTML error page truncated]");
+  }
+  if (m.length > 500) m = `${m.slice(0, 500)}…`;
+  return m;
+}
+
 function persistCompletedRun(
   address: `0x${string}`,
   runId: string,
@@ -77,13 +87,14 @@ function persistCompletedRun(
   status: RunRecord["status"],
   errorMessage?: string,
 ): void {
+  const safeError = errorMessage ? sanitizeErrorMessage(errorMessage) : undefined;
   saveRun(address, {
     id: runId,
     goal,
     createdAt: new Date().toISOString(),
     status,
     totalUsdc: result?.totalUsdc ?? 0,
-    deliverable: result?.deliverable ?? (errorMessage ? `Error: ${errorMessage}` : ""),
+    deliverable: result?.deliverable ?? (safeError ? `Error: ${safeError}` : ""),
     spend: result?.spend ?? [],
     uaTopUpTxId: result?.uaTopUpTxId,
     budgetUsdc,
@@ -102,7 +113,7 @@ app.use(
             payTo,
           },
         ],
-        description: "Synthesize a final deliverable from collected agent context (Arbitrum USDC)",
+        description: "Synthesize a final deliverable from collected agent context (Base USDC)",
         mimeType: "application/json",
       },
     },
@@ -452,7 +463,8 @@ app.post("/run", async (req, res) => {
 
     const send = (event: RunEvent) => {
       if (event.type === "done") finalResult = event.result;
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      // EIP-3009 / viem typed-data may contain BigInt — JSON.stringify would throw.
+      res.write(`data: ${JSON.stringify(jsonSafeDeep(event))}\n\n`);
     };
 
     try {

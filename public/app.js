@@ -241,6 +241,9 @@ function txChipHtml(url, label, variant) {
 }
 
 function stepLabel(step) {
+  if (step?.kind === "compose" || step?.kind === "synthesize") {
+    return step.label || "Compose deliverable (included)";
+  }
   return step.label ?? step.service;
 }
 
@@ -538,8 +541,8 @@ async function refreshAnalytics() {
 
 async function refreshSettings() {
   const settings = loadSettings();
-  const budget = Number(settings.defaultBudget ?? 0.15);
-  settingsDefaultBudget.value = Number.isFinite(budget) ? budget.toFixed(2) : "0.15";
+  const budget = Number(settings.defaultBudget ?? 0.1);
+  settingsDefaultBudget.value = Number.isFinite(budget) ? Math.min(budget, 0.1).toFixed(2) : "0.10";
   settingsTheme.value = settings.theme ?? "light";
   settingsNotifications.checked = Boolean(settings.notifications);
 
@@ -638,9 +641,10 @@ function renderResult(result) {
   if (result.uaTopUpTxId) renderUaProof(result.uaTopUpTxId);
   else uaProofBlock?.setAttribute("hidden", "");
 
-  const totalStr = `$${result.totalUsdc.toFixed(2)}`;
+  const paidLines = result.spend.filter((l) => !l.included && l.usdc > 0);
+  const totalStr = `$${result.totalUsdc.toFixed(4)}`;
   if (resultSummary) {
-    resultSummary.textContent = `${result.spend.length} step${result.spend.length === 1 ? "" : "s"} · ${totalStr} total`;
+    resultSummary.textContent = `${paidLines.length} paid step${paidLines.length === 1 ? "" : "s"} · ${totalStr} x402`;
   }
   if (receiptTotalInline) receiptTotalInline.textContent = totalStr;
 
@@ -648,14 +652,18 @@ function renderResult(result) {
   spendBody.innerHTML = "";
   for (const line of result.spend) {
     const tr = document.createElement("tr");
-    const url = explorerUrlForPayment(line);
-    const txCell = url
-      ? `<a class="spend-tx-link" href="${url}" target="_blank" rel="noopener">Receipt ↗</a>`
-      : "—";
-    tr.innerHTML = `<td>${escapeHtml(line.service)}</td><td class="spend-amount">${formatUsdc(line.usdc)}</td><td>${txCell}</td>`;
+    if (line.included || (!line.txHash && line.usdc === 0)) {
+      tr.innerHTML = `<td>${escapeHtml(line.service)}</td><td class="spend-amount">Included · $0</td><td>—</td>`;
+    } else {
+      const url = explorerUrlForPayment(line);
+      const txCell = url
+        ? `<a class="spend-tx-link" href="${url}" target="_blank" rel="noopener">Receipt ↗</a>`
+        : "—";
+      tr.innerHTML = `<td>${escapeHtml(line.service)}</td><td class="spend-amount">${formatUsdc(line.usdc)}</td><td>${txCell}</td>`;
+    }
     spendBody.appendChild(tr);
   }
-  totalSpent.innerHTML = `<strong class="total-spent-amount">${totalStr}</strong>`;
+  totalSpent.innerHTML = `<strong class="total-spent-amount">${totalStr}</strong> <span class="muted">paid x402</span>`;
   if (followUpAnswer) {
     followUpAnswer.hidden = true;
     followUpAnswer.innerHTML = "";
@@ -723,14 +731,28 @@ async function handleSignRequest(request) {
   }
   if (request.kind === "typed_data") {
     const td = request.typedData;
+    // Magic eth_signTypedData_v4 requires the typed-data OBJECT, not JSON.stringify.
+    // Stringifying produces invalid EIP-3009 signatures (facilitator: invalid_exact_evm_payload_signature).
+    // @see https://magic.link docs — personal signatures / eth_signTypedData_v4
+    // @see https://github.com/magiclabs/magic-js/issues/547
+    const types = { ...(td.types || {}) };
+    if (!types.EIP712Domain) {
+      types.EIP712Domain = [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ];
+    }
+    const typedData = {
+      domain: td.domain,
+      types,
+      primaryType: td.primaryType,
+      message: td.message,
+    };
     return magic.rpcProvider.request({
       method: "eth_signTypedData_v4",
-      params: [walletAddress, JSON.stringify({
-        domain: td.domain,
-        types: td.types,
-        primaryType: td.primaryType,
-        message: td.message,
-      })],
+      params: [walletAddress, typedData],
     });
   }
   throw new Error(`Unknown sign request kind: ${request.kind}`);
@@ -859,14 +881,20 @@ function renderEstimate(estimate) {
       .map((step) => {
         const label = stepLabel(step);
         const why = step.why ? `<p class="plan-step-why">${escapeHtml(step.why)}</p>` : "";
-        return `<div class="plan-step-row"><span>${escapeHtml(label)}</span><span>$${step.estCostUsdc.toFixed(4)}</span></div>${why}`;
+        const cost =
+          step.kind === "compose" || step.estCostUsdc === 0
+            ? `<span class="plan-step-included">Included · $0</span>`
+            : `<span>$${Number(step.estCostUsdc).toFixed(4)}</span>`;
+        return `<div class="plan-step-row"><span>${escapeHtml(label)}</span>${cost}</div>${why}`;
       })
       .join("") +
-    `<div class="plan-step-row plan-step-row--total"><span>Estimated total</span><span>$${estimate.totalEstUsdc.toFixed(4)}</span></div>`;
+    `<div class="plan-step-row plan-step-row--total"><span>Paid x402 total</span><span>$${estimate.totalEstUsdc.toFixed(4)}</span></div>`;
 
   renderCatalogPicker(estimate.catalog);
 
-  estimateTotal.innerHTML = `Estimated total: <strong>${formatUsdc(estimate.totalEstUsdc)}</strong> · run limit <strong>${formatUsdc(estimate.suggestedBudget)}</strong>`;
+  estimateTotal.innerHTML =
+    `Paid tools: <strong>${formatUsdc(estimate.totalEstUsdc)}</strong> · ` +
+    `compose included free · run limit <strong>${formatUsdc(estimate.suggestedBudget)}</strong>`;
   estimateCard.hidden = false;
   runBtn.hidden = false;
 }
@@ -931,7 +959,7 @@ async function startRun() {
     return;
   }
 
-  const budget = lastEstimate.suggestedBudget;
+  const budget = Math.min(Number(lastEstimate.suggestedBudget) || 0.1, 0.1);
   if (budget < lastEstimate.plan.totalEstUsdc) {
     alert(`Estimated cost is ${formatUsdc(lastEstimate.plan.totalEstUsdc)}. Check price again or raise your default limit in Settings.`);
     return;
@@ -996,11 +1024,15 @@ async function startRun() {
           setStepState(activeStep, "paying");
           appendLog(`> ${activeStep}…`);
         } else if (event.type === "payment") {
-          spent += event.line.usdc;
+          if (!event.line.included) spent += event.line.usdc;
           updateBudgetBar(spent, runBudget, event.remaining);
-          setStepState(event.line.service, "paid", event.line);
+          setStepState(event.line.service, event.line.included ? "settled" : "paid", event.line);
           activeStep = null;
-          appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash} · $${event.remaining.toFixed(4)} left`);
+          if (event.line.included) {
+            appendLog(`  included $0 · ${event.line.service}`);
+          } else {
+            appendLog(`  paid $${event.line.usdc.toFixed(6)} tx=${event.line.txHash} · $${event.remaining.toFixed(4)} left`);
+          }
         } else if (event.type === "step_done") {
           setStepState(stepLabel(event.step), "settled");
           appendLog(`  ✓ ${stepLabel(event.step)} settled`);
@@ -1207,7 +1239,7 @@ saveAgentBtn?.addEventListener("click", async () => {
       name,
       description: "Custom saved agent",
       goal,
-      suggestedBudget: parseFloat(budgetInput.value) || 0.15,
+      suggestedBudget: Math.min(parseFloat(budgetInput.value) || 0.1, 0.1),
     });
     await loadCustomAgents();
   } catch (err) {
@@ -1216,7 +1248,7 @@ saveAgentBtn?.addEventListener("click", async () => {
 });
 
 settingsDefaultBudget?.addEventListener("change", () => {
-  saveSettings({ defaultBudget: parseFloat(settingsDefaultBudget.value) || 0.15 });
+  saveSettings({ defaultBudget: Math.min(parseFloat(settingsDefaultBudget.value) || 0.1, 0.1) });
 });
 
 settingsTheme?.addEventListener("change", () => {

@@ -1,8 +1,8 @@
-import { fundRunWallet, type BudgetGuard } from "../budget/guard.js";
+import { fundRunWallet } from "../budget/guard.js";
 import { validateGoal } from "./goal-validation.js";
 import { waitForPlanApproval } from "./run-controller.js";
 import { createPlan, type AgentPlan, type PlanStep } from "./plan.js";
-import { synthesizeDeliverable } from "../services/seller.js";
+import { synthesizeWithLlm } from "./synthesize-llm.js";
 import { createBazaarMcpSession, mcpProxyToolCall, type BazaarMcpSession } from "./bazaar-mcp.js";
 import { resolveRunSession } from "../wallet/session.js";
 import { runWithContext } from "../wallet/run-context.js";
@@ -16,10 +16,13 @@ export interface SpendLine {
   txHash: string;
   explorerUrl: string;
   network: string;
+  /** Platform LLM / free step — not billed via x402. */
+  included?: boolean;
 }
 
 export interface RunResult {
   deliverable: string;
+  /** Paid x402 lines + included compose (usdc 0). totalUsdc sums paid only. */
   spend: SpendLine[];
   totalUsdc: number;
   plan: AgentPlan;
@@ -61,12 +64,18 @@ export function abortRun(): void {
 async function executeStep(
   step: PlanStep,
   goal: string,
-  guard: BudgetGuard,
   context: unknown[],
   mcpSession: BazaarMcpSession | undefined,
 ): Promise<PaymentResult> {
-  if (step.kind === "synthesize") {
-    return synthesizeDeliverable(goal, context, guard);
+  if (step.kind === "compose") {
+    const deliverable = await synthesizeWithLlm(goal, context);
+    return {
+      usdc: 0,
+      txHash: "",
+      explorerUrl: "",
+      network: "local",
+      data: { deliverable },
+    };
   }
 
   if (!step.mcpToolName) {
@@ -113,6 +122,7 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
     }
   }
 
+  // Fund only for paid x402 tools (compose is free).
   const guard = await fundRunWallet(budgetUsdc);
   const uaTopUp = guard.uaTopUp;
   if (uaTopUp) {
@@ -122,8 +132,14 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
   const spend: SpendLine[] = [];
   const context: unknown[] = [];
   let deliverable = "";
-  const hasMcpSteps = plan.steps.some((s) => s.kind === "mcp");
-  const mcpSession = hasMcpSteps ? await createBazaarMcpSession(guard) : undefined;
+  const mcpSteps = plan.steps.filter((s) => s.kind === "mcp");
+  const allowedToolNames = new Set(
+    mcpSteps.map((s) => s.mcpToolName).filter((n): n is string => Boolean(n)),
+  );
+  const mcpSession =
+    mcpSteps.length > 0
+      ? await createBazaarMcpSession(guard, { allowedToolNames })
+      : undefined;
 
   try {
     for (let i = 0; i < plan.steps.length; i++) {
@@ -132,24 +148,33 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
       const step = plan.steps[i];
       onEvent?.({ type: "step_start", step, index: i });
 
-      const result = await executeStep(step, goal, guard, context, mcpSession);
-      context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
+      const result = await executeStep(step, goal, context, mcpSession);
 
+      if (step.kind === "mcp") {
+        context.push({ tool: step.label, mcpToolName: step.mcpToolName, data: result.data });
+      }
+
+      const included = step.kind === "compose" || (result.usdc === 0 && !result.txHash);
       const line: SpendLine = {
         service: step.label,
         usdc: result.usdc,
         txHash: result.txHash,
         explorerUrl: result.explorerUrl,
         network: result.network,
+        included,
       };
       spend.push(line);
-      onEvent?.({ type: "payment", line, remaining: await guard.getRemaining() });
+      onEvent?.({
+        type: "payment",
+        line,
+        remaining: await guard.getRemaining(),
+      });
       onEvent?.({ type: "step_done", step, index: i });
 
-      if (step.kind === "synthesize") {
+      if (step.kind === "compose") {
         const payload = result.data as { deliverable?: string };
         if (!payload.deliverable) {
-          throw new Error("Synthesize step returned no deliverable");
+          throw new Error("Compose step returned no deliverable");
         }
         deliverable = payload.deliverable;
       }
@@ -158,7 +183,7 @@ async function runAgentInner(options: RunOptions): Promise<RunResult> {
     await mcpSession?.close();
   }
 
-  const totalUsdc = spend.reduce((s, l) => s + l.usdc, 0);
+  const totalUsdc = spend.filter((l) => !l.included).reduce((s, l) => s + l.usdc, 0);
   const runResult: RunResult = {
     deliverable,
     spend,

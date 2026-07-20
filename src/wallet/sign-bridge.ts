@@ -21,6 +21,28 @@ export interface SignRequest {
   typedData?: TypedDataSignPayload;
 }
 
+/**
+ * EIP-712 / SSE cannot carry native BigInt. Convert to decimal strings so
+ * eth_signTypedData_v4 and JSON.stringify both work (EIP-3009 uint256 fields).
+ * @see https://github.com/coinbase/x402/blob/main/specs/x402-specification-v2.md
+ */
+export function jsonSafeDeep(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(jsonSafeDeep);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = jsonSafeDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function sanitizeTypedData(typedData: TypedDataSignPayload): TypedDataSignPayload {
+  return jsonSafeDeep(typedData) as TypedDataSignPayload;
+}
+
 const pending = new Map<
   string,
   {
@@ -88,6 +110,10 @@ export async function requestDelegatedSignTypedData(
   typedData: TypedDataSignPayload,
 ): Promise<`0x${string}`> {
   const id = crypto.randomUUID();
-  const sig = await waitForSignature({ id, kind: "typed_data", typedData });
+  const sig = await waitForSignature({
+    id,
+    kind: "typed_data",
+    typedData: sanitizeTypedData(typedData),
+  });
   return sig as `0x${string}`;
 }

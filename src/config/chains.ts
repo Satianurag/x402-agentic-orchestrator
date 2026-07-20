@@ -72,6 +72,11 @@ export function getUaTopUpChainId(): number {
   return getNetworkMode() === "mainnet" ? 8453 : 84532;
 }
 
+/** Seller synthesize settles on Arbitrum — UA must top up this chain too. */
+export function getUaSellerTopUpChainId(): number {
+  return getNetworkMode() === "mainnet" ? 42161 : 421614;
+}
+
 export function getExplorerTxUrl(txHash: string, network: string): string {
   const base = resolveExplorerBaseUrl(network);
   return `${base}${txHash}`;

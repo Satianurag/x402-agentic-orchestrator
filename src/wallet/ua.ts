@@ -10,6 +10,8 @@ import { Magic } from "@magic-sdk/admin";
 import { type Hex } from "viem";
 import {
   getPaymentUsdc,
+  getSellerUsdc,
+  getUaSellerTopUpChainId,
   getUaTopUpChainId,
 } from "../config/chains.js";
 import { getRunContext } from "./run-context.js";
@@ -165,6 +167,20 @@ export class UniversalAccountWallet {
       token: {
         chainId: getUaTopUpChainId(),
         address: getPaymentUsdc(),
+      },
+      amount: amountUsdc,
+      receiver,
+    });
+    return this.sendUaTransaction(tx);
+  }
+
+  /** Cross-chain UA transfer → EOA on Arbitrum USDC for /synthesize seller payments. */
+  async crossChainTopUpSellerEoa(amountUsdc: string): Promise<{ transactionId: string }> {
+    const receiver = this.signer.address;
+    const tx = await this.ua.createTransferTransaction({
+      token: {
+        chainId: getUaSellerTopUpChainId(),
+        address: getSellerUsdc(),
       },
       amount: amountUsdc,
       receiver,
