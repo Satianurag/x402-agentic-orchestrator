@@ -47,6 +47,31 @@ export function getBaseRpcUrl(): string {
   return requireEnv("BASE_RPC_URL");
 }
 
+/**
+ * RPC URL exposed to the browser for Magic network config only.
+ * Must be a public endpoint — never put Alchemy/Particle API keys here.
+ * Server balance / x402 use {@link getBaseRpcUrl} instead.
+ */
+export function getMagicRpcUrl(): string {
+  const explicit = process.env.MAGIC_RPC_URL?.trim();
+  if (explicit) return explicit;
+  return getNetworkMode() === "mainnet"
+    ? "https://mainnet.base.org"
+    : "https://sepolia.base.org";
+}
+
+/** Warn when production still points at Base's rate-limited public RPC. */
+export function warnIfPublicBaseRpc(): void {
+  const url = process.env.BASE_RPC_URL ?? "";
+  if (/mainnet\.base\.org/i.test(url)) {
+    console.warn(
+      "[rpc] BASE_RPC_URL is the public https://mainnet.base.org endpoint — " +
+        "it is rate-limited and not for production. Set a provider RPC " +
+        "(Alchemy / QuickNode / Particle) in Render env.",
+    );
+  }
+}
+
 /** Our /synthesize seller settles on Arbitrum (One for demo, Sepolia for testnet). */
 export function getSellerChain() {
   return getNetworkMode() === "mainnet" ? arbitrum : arbitrumSepolia;
