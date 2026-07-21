@@ -42,7 +42,33 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "../../public");
+const notFoundPage = path.join(publicDir, "404.html");
 const PORT = Number(process.env.PORT ?? 4020);
+
+function isApiLikePath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/run") ||
+    pathname === "/synthesize" ||
+    pathname === "/agents"
+  );
+}
+
+function hasAssetExtension(pathname: string): boolean {
+  return /\.[a-z0-9]{1,8}$/i.test(pathname);
+}
+
+function sendNotFound(req: express.Request, res: express.Response): void {
+  if (isApiLikePath(req.path) || hasAssetExtension(req.path)) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (req.accepts(["html", "json"]) === "json") {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.status(404).sendFile(notFoundPage);
+}
 
 const payTo = process.env.SELLER_PAY_TO;
 if (!payTo) {
@@ -545,7 +571,15 @@ app.get("/app", (_req, res) => {
   res.sendFile(path.join(publicDir, "app.html"));
 });
 
+app.get("/404.html", (_req, res) => {
+  res.status(404).sendFile(notFoundPage);
+});
+
 app.use(express.static(publicDir));
+
+app.use((_req, res) => {
+  sendNotFound(_req, res);
+});
 
 app.listen(PORT, process.env.HOST ?? "0.0.0.0", () => {
   const host = process.env.HOST ?? "0.0.0.0";
