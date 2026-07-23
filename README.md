@@ -1,3 +1,5 @@
+**Demo:** https://youtu.be/BKBTk5R1GsY
+
 # x402 Agentic Orchestrator
 
 **Pay-per-use AI agent that discovers, plans, and executes x402 micro-services — bounded by an on-chain USDC budget.**
